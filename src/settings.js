@@ -4,8 +4,9 @@
 import { EXTENSION_KEY } from './constants.js';
 
 export const DEFAULT_SETTINGS = Object.freeze({
-    // Способ вызова моделей: backend — через сервер ST (ключ из «Подключений API»), direct — напрямую в OpenRouter.
-    transport: 'backend',
+    // Способ вызова моделей: direct — напрямую в OpenRouter (основной, решение спайка 1.2),
+    // backend — через сервер ST (ключ из «Подключений API»), запасной.
+    transport: 'direct',
     openrouterKey: '',
     masterModel: 'openai/gpt-4o',
     heroModel: 'openai/gpt-4o-mini',
