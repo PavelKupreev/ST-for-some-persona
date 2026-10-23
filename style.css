@@ -183,3 +183,9 @@
 .rpga-panel .rpga-stat-line {
     opacity: 0.8;
 }
+
+/* Вмешательство (этап 5) */
+.rpga-panel .rpga-micro-line {
+    opacity: 0.8;
+    font-style: italic;
+}

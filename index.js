@@ -3,6 +3,7 @@
 // Этап 2: ход по кнопке (мастер → герой, броски, мысли спойлером).
 // Этап 3: старт игры — мир, две карточки, листы героев, завязка, язык игры (src/startPanel.js).
 // Этап 4: автосессия — цикл ходов, лимит, конец сцены, пауза на ошибке, главная панель (src/autosession.js).
+// Этап 5: вмешательство — тайная микроцель герою и записка мастеру (src/intervention.js).
 
 import { EXTENSION_ROOT, LOG_PREFIX } from './src/constants.js';
 import { getSettings, updateSettings } from './src/settings.js';
@@ -11,6 +12,7 @@ import { callModel } from './src/llm.js';
 import { postAsCharacter, postAsMaster } from './src/chat.js';
 import { bindStartPanel, describeGame, gameOutput, renderStartPanel } from './src/startPanel.js';
 import { bindSession, renderSession } from './src/autosession.js';
+import { bindIntervention } from './src/intervention.js';
 
 const PING_MESSAGES = [
     { role: 'system', content: 'Ты помогаешь проверить подключение. Отвечай одной короткой фразой на русском.' },
@@ -162,7 +164,12 @@ jQuery(async () => {
         bindButton('#rpga_test_state', testState);
         bindButton('#rpga_test_messages', testMessages);
         bindStartPanel((selector, handler) => bindButton(selector, handler, gameOutput));
-        bindSession((selector, handler) => bindButton(selector, handler, (text) => $('#rpga_session_output').text(text)));
+        const sessionOutput = (text) => $('#rpga_session_output').text(text);
+        bindSession((selector, handler) => bindButton(selector, handler, sessionOutput));
+        bindIntervention((selector, handler) => bindButton(selector, handler, sessionOutput), () => {
+            renderSession();
+            renderStartPanel();
+        });
 
         renderSession();
 

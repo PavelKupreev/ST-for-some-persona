@@ -1,6 +1,7 @@
 // Автосессия (этап 4, концепция Б): ходы идут сами, пока их не остановит пользователь, лимит, конец сцены или ошибка.
 // Старт / Пауза / Продолжить / Стоп (FR-07), задержка (NFR-05), лимит и счётчик (FR-20),
 // стоп в конце сцены (FR-21), пауза на первой ошибке без повторов (FR-22), главная панель (FR-28).
+// Поля вмешательства на этой панели — src/intervention.js (этап 5).
 
 import { LOG_PREFIX } from './constants.js';
 import { getSettings } from './settings.js';
@@ -11,6 +12,7 @@ import { playStep } from './game.js';
 import { HERO_IDS } from './prompts.js';
 import { startProblems } from './setup.js';
 import { refreshButtons, resetScene } from './startPanel.js';
+import { renderIntervention } from './intervention.js';
 
 /**
  * Цикл, который крутится в этой вкладке. Живёт только в памяти: после перезагрузки ST
@@ -207,6 +209,7 @@ export function renderSession() {
     $('#rpga_session_stop').toggleClass('rpga-off', !(running || status === 'paused') || loop?.request === 'stopped');
 
     renderHeroCards(state);
+    renderIntervention(state);
 }
 
 function renderHeroCards(state) {
@@ -224,6 +227,7 @@ function renderHeroCards(state) {
             .append($('<span class="rpga-hp-text">').text(`HP ${current}/${max}`)));
         card.append($('<div class="rpga-hp-bar">').append($('<div class="rpga-hp-fill">').css('width', `${percent}%`)));
         card.append($('<small class="rpga-stat-line">').text(STATS.map((stat) => `${stat} ${hero.stats[stat]} (${formatMod(hero.stats[stat])})`).join(' · ')));
+        card.append($('<small class="rpga-micro-line">').text(`🎯 ${hero.microGoal || '—'}`).attr('title', 'Тайная микроцель: видят только этот герой и мастер'));
         box.append(card);
     }
 }

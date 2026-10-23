@@ -79,6 +79,24 @@
                 </div>
                 <small id="rpga_start_hint" class="rpga-hint"></small>
                 <div id="rpga_hero_cards" class="rpga-hero-cards"></div>
+                <div id="rpga_intervene" class="rpga-section">
+                    <b>Вмешательство</b>
+                    <label for="rpga_micro_hero">Тайная микроцель герою</label>
+                    <select id="rpga_micro_hero" class="text_pole"></select>
+                    <textarea id="rpga_micro_text" class="text_pole" rows="2" maxlength="500" placeholder="сходить в магазин"></textarea>
+                    <small>Видят только этот герой и мастер. Заменяет прежнюю, действует со следующего хода.</small>
+                    <div class="rpga-buttons">
+                        <div id="rpga_micro_set" class="menu_button">🎯 Задать микроцель</div>
+                    </div>
+                    <label for="rpga_note_text">Записка мастеру</label>
+                    <textarea id="rpga_note_text" class="text_pole" rows="2" maxlength="500" placeholder="пусть пойдёт дождь"></textarea>
+                    <small>Одноразовая: уйдёт мастеру в ближайший его ход, герои её не видят.</small>
+                    <div class="rpga-buttons">
+                        <div id="rpga_note_send" class="menu_button">✉️ Отправить записку</div>
+                        <div id="rpga_note_cancel" class="menu_button">Отозвать</div>
+                    </div>
+                    <small id="rpga_note_status" class="rpga-hint"></small>
+                </div>
                 <div id="rpga_session_output" class="rpga-output"></div>
             </div>
 

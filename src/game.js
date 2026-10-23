@@ -12,6 +12,7 @@ import { formatRoll, resolveCheck, rollDie } from './dice.js';
 import { parseHeroResponse, parseMasterResponse, normalizeNext } from './parse.js';
 import { HERO_IDS, buildHeroPrompt, buildMasterPrompt } from './prompts.js';
 import { chooseNext, updateSilence } from './turnOrder.js';
+import { consumeMasterNote } from './intervention.js';
 
 const MASTER_MAX_TOKENS = 700;
 const HERO_MAX_TOKENS = 500;
@@ -98,6 +99,7 @@ async function masterTurn(state, chatId) {
     // Броски уже сделаны, а описание исхода сорвалось: повторяем только его, кубики не перебрасываем.
     if (!state.session.pendingOutcome) {
         const check = decideCheck(state, settings.checkFrequency);
+        const note = state.session.masterNote;
         const raw = await callModel({
             role: 'master',
             model: settings.masterModel,
@@ -114,7 +116,7 @@ async function masterTurn(state, chatId) {
         }
 
         // Записку пользователь писал на ближайший ход мастера (FR-19).
-        state.session.masterNote = '';
+        useNote(state, note);
 
         if (!parsed.rolls.length) {
             await recordMasterTurn(state, parsed.text, [], parsed.sceneEnd);
@@ -130,6 +132,8 @@ async function masterTurn(state, chatId) {
         }
     }
 
+    // Новая записка, пришедшая, пока мастер думал над первой частью хода, уходит в описание исхода.
+    const outcomeNote = state.session.masterNote;
     const outcomeRaw = await callModel({
         role: 'master',
         model: settings.masterModel,
@@ -141,6 +145,7 @@ async function masterTurn(state, chatId) {
     if (outcome.rolls.length) {
         console.warn(`${LOG_PREFIX} мастер поставил новые броски в описании исхода, они пропущены`, outcome.rolls);
     }
+    useNote(state, outcomeNote);
     state.session.pendingOutcome = false;
     await recordMasterTurn(state, outcome.text, [], outcome.sceneEnd);
     if (!rolls.length) rolls = state.turns.findLast((turn) => turn.rolls?.length)?.rolls ?? [];
@@ -150,6 +155,10 @@ async function masterTurn(state, chatId) {
         sceneEnd: outcome.sceneEnd,
         detail: rolls.map((roll) => roll.line).join('; '),
     };
+}
+
+function useNote(state, note) {
+    if (consumeMasterNote(state.session, note)) console.log(`${LOG_PREFIX} записка передана мастеру и снята: «${note}»`);
 }
 
 /**

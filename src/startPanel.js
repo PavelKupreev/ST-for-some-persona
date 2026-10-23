@@ -270,10 +270,13 @@ export function refreshButtons() {
     $('#rpga_reset_scene').toggleClass('rpga-off', running || !state.turns.length);
 }
 
-/** Чистая сцена: история, очередь и сессия с нуля, хиты героев полные. */
+/**
+ * Чистая сцена: история, очередь и сессия с нуля, хиты героев полные.
+ * Неотправленная записка мастеру остаётся: её часто пишут до старта, на первый ход (FR-19).
+ */
 export function resetScene(state) {
     state.turns = [];
-    Object.assign(state.session, { status: 'idle', reason: '', turnsLeft: 0, next: 'master', masterNote: '', pendingOutcome: false });
+    Object.assign(state.session, { status: 'idle', reason: '', turnsLeft: 0, next: 'master', pendingOutcome: false });
     for (const hero of state.heroes) {
         hero.silence = 0;
         hero.hp.current = hero.hp.max;
