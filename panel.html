@@ -1,0 +1,45 @@
+<div id="rpga_panel" class="rpga-panel">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>RPG-автосессия</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="rpga-section">
+                <h4>Модели OpenRouter</h4>
+                <label for="rpga_transport">Способ вызова</label>
+                <select id="rpga_transport" class="text_pole">
+                    <option value="backend">Через сервер ST (ключ из «Подключений API»)</option>
+                    <option value="direct">Напрямую в OpenRouter (ключ ниже)</option>
+                </select>
+
+                <div id="rpga_key_block">
+                    <label for="rpga_openrouter_key">Ключ OpenRouter</label>
+                    <input id="rpga_openrouter_key" class="text_pole" type="password" autocomplete="off" placeholder="sk-or-...">
+                    <small>Хранится в настройках ST, в чат и его метаданные не попадает.</small>
+                </div>
+
+                <label for="rpga_master_model">Модель мастера (A)</label>
+                <input id="rpga_master_model" class="text_pole" type="text" placeholder="openai/gpt-4o">
+
+                <label for="rpga_hero_model">Модель героев (B)</label>
+                <input id="rpga_hero_model" class="text_pole" type="text" placeholder="openai/gpt-4o-mini">
+
+                <label class="checkbox_label" for="rpga_log_prompts">
+                    <input id="rpga_log_prompts" type="checkbox">
+                    <span>Лог промптов в консоль браузера (F12)</span>
+                </label>
+            </div>
+
+            <div class="rpga-section">
+                <h4>Проверки этапа 1</h4>
+                <div class="rpga-buttons">
+                    <div id="rpga_test_models" class="menu_button">1.2 Тест моделей A и B</div>
+                    <div id="rpga_test_state" class="menu_button">1.3 Счётчик в чате +1</div>
+                    <div id="rpga_test_messages" class="menu_button">1.4 Тест сообщений</div>
+                </div>
+                <div id="rpga_test_output" class="rpga-output"></div>
+            </div>
+        </div>
+    </div>
+</div>

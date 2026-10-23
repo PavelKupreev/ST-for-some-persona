@@ -1,0 +1,28 @@
+.rpga-panel .rpga-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.rpga-panel .rpga-section h4 {
+    margin: 6px 0 2px;
+}
+
+.rpga-panel .rpga-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.rpga-panel .rpga-output {
+    white-space: pre-wrap;
+    font-size: 0.9em;
+    opacity: 0.85;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.rpga-panel .rpga-output:empty {
+    display: none;
+}
