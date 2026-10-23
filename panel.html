@@ -34,10 +34,52 @@
                 </datalist>
                 <small>На нём пишут мастер и герои, даже если карточки на другом языке.</small>
 
+                <b>Параметры автосессии</b>
+                <div class="rpga-settings-grid">
+                    <label for="rpga_max_turns">Лимит ходов N
+                        <input id="rpga_max_turns" class="text_pole" type="number" min="1" max="500" step="1">
+                    </label>
+                    <label for="rpga_turn_delay">Задержка между ходами, с
+                        <input id="rpga_turn_delay" class="text_pole" type="number" min="0" max="60" step="0.5">
+                    </label>
+                    <label for="rpga_randomness">Случайность выбора, %
+                        <input id="rpga_randomness" class="text_pole" type="number" min="0" max="100" step="5">
+                    </label>
+                    <label for="rpga_check_frequency">Частота проверок, %
+                        <input id="rpga_check_frequency" class="text_pole" type="number" min="0" max="100" step="5">
+                    </label>
+                    <label for="rpga_silence">Порог молчания, ходов
+                        <input id="rpga_silence" class="text_pole" type="number" min="0" max="50" step="1">
+                    </label>
+                </div>
+                <small>Ход — реплика одного участника: мастера или героя. Случайность заменяет выбор мастера случайным. Частота проверок — доля действий героев, которые мастер проверяет броском d20: 0 — без кубиков, 100 — каждое действие. Герой, молчащий столько ходов, ходит обязательно (0 — выключено).</small>
+                <label class="checkbox_label" for="rpga_stop_scene_end">
+                    <input id="rpga_stop_scene_end" type="checkbox">
+                    <span>Стоп в конце сцены</span>
+                </label>
+
                 <label class="checkbox_label" for="rpga_log_prompts">
                     <input id="rpga_log_prompts" type="checkbox">
                     <span>Лог промптов в консоль браузера (F12)</span>
                 </label>
+            </div>
+
+            <div id="rpga_session" class="rpga-section">
+                <h4>Автосессия</h4>
+                <div class="rpga-counter">
+                    <span id="rpga_turns_left" class="rpga-counter-value">0</span>
+                    <span class="rpga-counter-label">ходов осталось <span id="rpga_turns_total"></span></span>
+                </div>
+                <div id="rpga_session_status" class="rpga-session-status"></div>
+                <div class="rpga-buttons">
+                    <div id="rpga_session_start" class="menu_button" title="Новая сцена с лимитом N ходов">▶ Старт</div>
+                    <div id="rpga_session_pause" class="menu_button" title="Текущий ход доиграет, новый не начнётся">⏸ Пауза</div>
+                    <div id="rpga_session_continue" class="menu_button" title="С того же места; если лимит исчерпан — ещё N ходов">⏯ Продолжить</div>
+                    <div id="rpga_session_stop" class="menu_button" title="Сессия завершится до нового «Старта»">⏹ Стоп</div>
+                </div>
+                <small id="rpga_start_hint" class="rpga-hint"></small>
+                <div id="rpga_hero_cards" class="rpga-hero-cards"></div>
+                <div id="rpga_session_output" class="rpga-output"></div>
             </div>
 
             <div class="rpga-section">
@@ -77,12 +119,11 @@
                     <b>3. Завязка сцены</b>
                     <textarea id="rpga_premise" class="text_pole" rows="3" placeholder="Пусто — мастер придумает завязку сам"></textarea>
 
+                    <small>Сцену запускает «Старт» в блоке «Автосессия» выше. Вручную, по одному ходу:</small>
                     <div class="rpga-buttons">
-                        <div id="rpga_start" class="menu_button">Старт</div>
                         <div id="rpga_one_turn" class="menu_button">Один ход</div>
                         <div id="rpga_reset_scene" class="menu_button">Сбросить сцену</div>
                     </div>
-                    <small id="rpga_start_hint" class="rpga-hint"></small>
                 </div>
                 <div id="rpga_game_output" class="rpga-output"></div>
             </div>

@@ -120,13 +120,15 @@ function cleanValue(value) {
 const NEXT_TAG = /\[\s*(?:NEXT|СЛЕДУЮЩИЙ|ДАЛЕЕ)\s*[:=—–-]?\s*([^\]]*)\]/gi;
 // Без скобок, отдельной строкой: «NEXT: hero1», «**Следующий:** Лиа»
 const NEXT_LINE = /^[ \t*_]*(?:NEXT|СЛЕДУЮЩИЙ|ДАЛЕЕ)[ \t*_]*[:=—–-][ \t*_]*(.+?)[ \t*_]*$/gim;
+// Конец сцены (FR-21): [КОНЕЦ СЦЕНЫ], [SCENE END], [END OF SCENE], [END_SCENE], [СЦЕНА ЗАВЕРШЕНА]
+const SCENE_END_TAG = /\[\s*(?:КОНЕЦ[\s_-]*СЦЕНЫ|СЦЕНА[\s_-]*ЗАВЕРШЕНА|SCENE[\s_-]*END|END[\s_-]*(?:OF[\s_-]*)?SCENE)\s*\]/gi;
 
 /**
  * Разбирает ответ мастера: видимый текст, метки бросков и выбор следующего.
  * @param {string} raw
  * @param {object} [options]
  * @param {string[]} [options.heroNames] имена героя 1 и героя 2, чтобы понять «[NEXT: Арен]»
- * @returns {{text: string, next: 'hero1'|'hero2'|'master'|null, rolls: ReturnType<typeof parseRollTags>}}
+ * @returns {{text: string, next: 'hero1'|'hero2'|'master'|null, rolls: ReturnType<typeof parseRollTags>, sceneEnd: boolean}}
  */
 export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     const source = String(raw ?? '').replace(/\r\n?/g, '\n').trim();
@@ -138,11 +140,25 @@ export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     }
 
     const rolls = parseRollTags(source);
-    let text = stripRollTags(source.replace(NEXT_TAG, '').replace(NEXT_LINE, ''));
+    const sceneEnd = SCENE_END_TAG.test(source);
+    SCENE_END_TAG.lastIndex = 0;
+    let text = stripRollTags(source.replace(NEXT_TAG, '').replace(NEXT_LINE, '').replace(SCENE_END_TAG, ''));
     text = text.replace(/^\s*\**(?:Мастер|Master|DM)\**\s*:\s*/i, '').trim();
+    // Мастер не говорит за героев: строки «Мира: ...» и «**Мира:** ...» вырезаем, у героев свои ходы.
+    text = dropSpeakerLines(text, heroNames);
     if (!text) throw new ParseError('В ответе мастера нет текста, только служебные метки', raw);
 
-    return { text, next, rolls };
+    return { text, next, rolls, sceneEnd };
+}
+
+function dropSpeakerLines(text, names) {
+    const valid = names.filter(Boolean).map((name) => name.toLowerCase());
+    if (!valid.length) return text;
+    const kept = text.split('\n').filter((line) => {
+        const head = line.replace(/^[\s*_>«"-]+/, '').toLowerCase();
+        return !valid.some((name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[*_\\s]*:`).test(head));
+    });
+    return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**

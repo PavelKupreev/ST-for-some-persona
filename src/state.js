@@ -23,9 +23,11 @@ export function createEmptyState() {
         chronicle: [],
         session: {
             status: 'idle', // idle / running / paused / stopped
-            turnsLeft: 0,
+            reason: '', // почему сессия на паузе или остановлена (UC-05, FR-22)
+            turnsLeft: 0, // сколько ходов осталось до лимита (FR-20)
             masterNote: '',
             next: 'master', // кто ходит следующим: master / hero1 / hero2
+            pendingOutcome: false, // броски сделаны, описание исхода ещё не получено
         },
         debug: {
             counter: 0,

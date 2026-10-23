@@ -2,6 +2,7 @@
 // Этап 1: панель с настройками моделей и тестовыми кнопками для проверки каркаса.
 // Этап 2: ход по кнопке (мастер → герой, броски, мысли спойлером).
 // Этап 3: старт игры — мир, две карточки, листы героев, завязка, язык игры (src/startPanel.js).
+// Этап 4: автосессия — цикл ходов, лимит, конец сцены, пауза на ошибке, главная панель (src/autosession.js).
 
 import { EXTENSION_ROOT, LOG_PREFIX } from './src/constants.js';
 import { getSettings, updateSettings } from './src/settings.js';
@@ -9,6 +10,7 @@ import { getState, saveState } from './src/state.js';
 import { callModel } from './src/llm.js';
 import { postAsCharacter, postAsMaster } from './src/chat.js';
 import { bindStartPanel, describeGame, gameOutput, renderStartPanel } from './src/startPanel.js';
+import { bindSession, renderSession } from './src/autosession.js';
 
 const PING_MESSAGES = [
     { role: 'system', content: 'Ты помогаешь проверить подключение. Отвечай одной короткой фразой на русском.' },
@@ -44,7 +46,29 @@ function bindSettings() {
         updateSettings({ logPrompts: $(this).prop('checked') });
     });
 
+    bindNumber('#rpga_max_turns', 'maxTurns', 1, 500);
+    bindNumber('#rpga_turn_delay', 'turnDelaySec', 0, 60, { integer: false });
+    bindNumber('#rpga_randomness', 'randomness', 0, 100);
+    bindNumber('#rpga_check_frequency', 'checkFrequency', 0, 100);
+    bindNumber('#rpga_silence', 'silenceThreshold', 0, 50);
+    $('#rpga_stop_scene_end').prop('checked', settings.stopAtSceneEnd).on('change', function () {
+        updateSettings({ stopAtSceneEnd: $(this).prop('checked') });
+    });
+
     toggleKeyBlock();
+}
+
+// Числовая настройка: сохраняем только допустимое значение, при уходе из поля показываем сохранённое.
+function bindNumber(selector, key, min, max, { integer = true } = {}) {
+    $(selector).val(getSettings()[key]).on('input', function () {
+        const raw = Number($(this).val());
+        if ($(this).val() === '' || !Number.isFinite(raw)) return;
+        const value = integer ? Math.round(raw) : raw;
+        updateSettings({ [key]: Math.min(max, Math.max(min, value)) });
+        renderSession();
+    }).on('change', function () {
+        $(this).val(getSettings()[key]);
+    });
 }
 
 function toggleKeyBlock() {
@@ -89,6 +113,8 @@ async function testState() {
 function showStateOnChatChange() {
     const state = getState();
     output(state ? `Открыт чат, счётчик: ${state.debug.counter}` : '');
+    // Сначала сессия: она переводит «идёт» без живого цикла в паузу, от этого зависят кнопки старта.
+    renderSession();
     renderStartPanel();
     gameOutput(describeGame());
 }
@@ -136,6 +162,9 @@ jQuery(async () => {
         bindButton('#rpga_test_state', testState);
         bindButton('#rpga_test_messages', testMessages);
         bindStartPanel((selector, handler) => bindButton(selector, handler, gameOutput));
+        bindSession((selector, handler) => bindButton(selector, handler, (text) => $('#rpga_session_output').text(text)));
+
+        renderSession();
 
         const { eventSource, eventTypes } = SillyTavern.getContext();
         eventSource.on(eventTypes.CHAT_CHANGED, showStateOnChatChange);

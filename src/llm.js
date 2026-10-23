@@ -8,6 +8,8 @@ import { getSettings } from './settings.js';
 import { logError, logPrompt, logResponse } from './logger.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// Модель зависла или OpenRouter не отвечает: дольше не ждём, ход считается сорвавшимся (FR-22).
+export const REQUEST_TIMEOUT_SEC = 120;
 
 /**
  * Отправляет сообщения модели и возвращает текст ответа.
@@ -27,17 +29,26 @@ export async function callModel({ role, model, messages, maxTokens = 800, temper
     const { transport } = getSettings();
     const requestId = logPrompt({ role, model, transport, messages });
 
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_SEC * 1000);
+    const combined = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
+
     try {
         const text = transport === 'direct'
-            ? await callDirect({ model, messages, maxTokens, temperature, signal })
-            : await callBackend({ model, messages, maxTokens, temperature, signal });
+            ? await callDirect({ model, messages, maxTokens, temperature, signal: combined })
+            : await callBackend({ model, messages, maxTokens, temperature, signal: combined });
 
         if (!text || !text.trim()) throw new Error('Модель вернула пустой ответ');
         logResponse(requestId, role, text);
         return text;
     } catch (error) {
-        logError(requestId, role, error);
-        throw error;
+        const failure = timeout.signal.aborted
+            ? new Error(`модель «${model}» не ответила за ${REQUEST_TIMEOUT_SEC} с`)
+            : error;
+        logError(requestId, role, failure);
+        throw failure;
+    } finally {
+        clearTimeout(timer);
     }
 }
 

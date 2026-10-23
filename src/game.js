@@ -1,4 +1,5 @@
-// Ход по кнопке (этап 2, концепция А): мастер → выбранный им герой (FR-08), броски (FR-13, FR-14).
+// Ходы игры: мастер → выбранный герой (FR-08), броски (FR-13, FR-14), очерёдность (FR-09, FR-10).
+// Этап 2 — «Один ход» по кнопке, этап 4 — те же шаги в цикле автосессии (src/autosession.js).
 // Промпты собираются из state.turns, а не из сообщений чата: в чате мысли лежат спойлером,
 // и брать их оттуда значило бы рисковать утечкой ко второму герою (NFR-01).
 
@@ -10,26 +11,55 @@ import { postAsCharacter, postAsMaster } from './chat.js';
 import { formatRoll, resolveCheck, rollDie } from './dice.js';
 import { parseHeroResponse, parseMasterResponse, normalizeNext } from './parse.js';
 import { HERO_IDS, buildHeroPrompt, buildMasterPrompt } from './prompts.js';
+import { chooseNext, updateSilence } from './turnOrder.js';
 
-const MASTER_MAX_TOKENS = 900;
+const MASTER_MAX_TOKENS = 700;
 const HERO_MAX_TOKENS = 500;
 
 /**
- * Одно нажатие «Один ход»: если очередь мастера — ход мастера (с бросками и описанием исхода),
- * затем, если мастер передал ход герою, — ход этого героя.
- * Если ход сорвался, очередь не сдвигается: следующее нажатие повторит его.
+ * Один ход одного актора: мастера (с бросками и описанием исхода) или героя, на кого указывает state.session.next.
+ * Если ход сорвался, очередь не сдвигается: следующий вызов повторит его (FR-22).
+ * @returns {Promise<{author: string, report: string, sceneEnd: boolean}>}
+ */
+export async function playStep() {
+    const state = requireGame();
+    const chatId = SillyTavern.getContext().getCurrentChatId();
+    const heroIndex = HERO_IDS.indexOf(state.session.next);
+
+    const step = heroIndex === -1
+        ? await masterTurn(state, chatId)
+        : await heroTurn(state, heroIndex, chatId);
+
+    const settings = getSettings();
+    updateSilence(state.heroes, step.author);
+    const choice = chooseNext({
+        author: step.author,
+        masterChoice: step.masterChoice,
+        silence: state.heroes.map((hero) => hero.silence),
+        randomness: settings.randomness,
+        silenceThreshold: settings.silenceThreshold,
+    });
+    state.session.next = choice.next;
+    state.turns[state.turns.length - 1].next = choice.next;
+    await saveState();
+    logChoice(state, step, choice);
+
+    const label = step.author === 'master' ? 'Мастер' : state.heroes[heroIndex].name;
+    const reason = { random: ' (случайный выбор)', silence: ' (давно молчал)' }[choice.reason] ?? '';
+    const lines = [`${label}${step.detail ? `: ${step.detail}` : ''} → ${describeNext(state)}${reason}`];
+    if (step.sceneEnd) lines.push('🏁 Мастер отметил конец сцены');
+    return { author: step.author, report: lines.join('\n'), sceneEnd: Boolean(step.sceneEnd) };
+}
+
+/**
+ * «Один ход» по кнопке (этап 2): ход мастера и, если он передал слово герою, ход этого героя.
  * @returns {Promise<string>} краткий отчёт для панели
  */
 export async function playOneTurn() {
-    const state = requireGame();
-    const report = [];
-
-    if (state.session.next === 'master' || !state.session.next) {
-        await masterTurn(state, report);
-    }
-    const heroIndex = HERO_IDS.indexOf(state.session.next);
-    if (heroIndex !== -1) {
-        await heroTurn(state, heroIndex, report);
+    const first = await playStep();
+    const report = [first.report];
+    if (first.author === 'master' && HERO_IDS.includes(getState()?.session.next)) {
+        report.push((await playStep()).report);
     }
     return report.join('\n');
 }
@@ -41,33 +71,63 @@ function requireGame() {
     return state;
 }
 
-async function masterTurn(state, report) {
+// Пока модель думала, пользователь мог открыть другой чат: тогда писать некуда.
+function assertSameChat(chatId) {
+    if (SillyTavern.getContext().getCurrentChatId() !== chatId) {
+        throw new Error('Во время хода открыт другой чат: ход не записан, вернитесь в чат игры и нажмите «Продолжить»');
+    }
+}
+
+function logChoice(state, step, choice) {
+    const who = (id) => (HERO_IDS.includes(id) ? `${id} (${state.heroes[HERO_IDS.indexOf(id)].name})` : id);
+    const why = {
+        silence: `защита от молчания, порог ${getSettings().silenceThreshold}`,
+        random: `случайность ${getSettings().randomness} %, мастер выбрал ${who(step.masterChoice)}`,
+        'after-hero': 'после героя ходит мастер',
+        master: 'выбор мастера',
+    }[choice.reason];
+    console.log(`${LOG_PREFIX} следующий ход: ${who(choice.next)} — ${why}; молчание: ${state.heroes.map((hero) => `${hero.name} ${hero.silence}`).join(', ')}`);
+}
+
+async function masterTurn(state, chatId) {
     const settings = getSettings();
     const heroNames = state.heroes.map((hero) => hero.name);
     const cards = state.heroes.map((hero) => toPromptCard(findCharacter(hero)));
+    let rolls = [];
 
-    const raw = await callModel({
-        role: 'master',
-        model: settings.masterModel,
-        messages: buildMasterPrompt({ state, cards, language: settings.language }),
-        maxTokens: MASTER_MAX_TOKENS,
-    });
-    const parsed = parseMasterResponse(raw, { heroNames });
+    // Броски уже сделаны, а описание исхода сорвалось: повторяем только его, кубики не перебрасываем.
+    if (!state.session.pendingOutcome) {
+        const check = decideCheck(state, settings.checkFrequency);
+        const raw = await callModel({
+            role: 'master',
+            model: settings.masterModel,
+            messages: buildMasterPrompt({ state, cards, language: settings.language, check }),
+            maxTokens: MASTER_MAX_TOKENS,
+        });
+        assertSameChat(chatId);
+        const parsed = parseMasterResponse(raw, { heroNames });
+        if (check.mode === 'forbidden' && parsed.rolls.length) {
+            console.warn(`${LOG_PREFIX} бросок в этом ходе не положен (частота проверок ${settings.checkFrequency} %), метки пропущены`, parsed.rolls);
+            parsed.rolls = [];
+        } else if (check.mode === 'required' && !parsed.rolls.length) {
+            console.warn(`${LOG_PREFIX} мастер не поставил обязательную проверку для ${check.hero}`);
+        }
 
-    // Записку пользователь писал на ближайший ход мастера (FR-19).
-    state.session.masterNote = '';
+        // Записку пользователь писал на ближайший ход мастера (FR-19).
+        state.session.masterNote = '';
 
-    if (!parsed.rolls.length) {
-        await recordMasterTurn(state, parsed.text, [], resolveNext(state, parsed.next));
-        report.push(`Мастер → ${describeNext(state)}`);
-        return;
-    }
+        if (!parsed.rolls.length) {
+            await recordMasterTurn(state, parsed.text, [], parsed.sceneEnd);
+            return { author: 'master', masterChoice: resolveNext(state, parsed.next), sceneEnd: parsed.sceneEnd };
+        }
 
-    // Мастер остановился на попытке: бросаем, показываем плашки, просим описать исход (FR-13, FR-14).
-    const rolls = parsed.rolls.map((tag) => performRoll(state, tag, heroNames));
-    await recordMasterTurn(state, parsed.text, rolls, null);
-    for (const roll of rolls) {
-        await postAsMaster(roll.line, { kind: 'roll', roll });
+        // Мастер остановился на попытке: бросаем, показываем плашки, просим описать исход (FR-13, FR-14).
+        rolls = parsed.rolls.map((tag) => performRoll(state, tag, heroNames));
+        state.session.pendingOutcome = true;
+        await recordMasterTurn(state, parsed.text, rolls, false);
+        for (const roll of rolls) {
+            await postAsMaster(roll.line, { kind: 'roll', roll });
+        }
     }
 
     const outcomeRaw = await callModel({
@@ -76,17 +136,37 @@ async function masterTurn(state, report) {
         messages: buildMasterPrompt({ state, cards, language: settings.language, mode: 'outcome' }),
         maxTokens: MASTER_MAX_TOKENS,
     });
+    assertSameChat(chatId);
     const outcome = parseMasterResponse(outcomeRaw, { heroNames });
     if (outcome.rolls.length) {
         console.warn(`${LOG_PREFIX} мастер поставил новые броски в описании исхода, они пропущены`, outcome.rolls);
     }
-    await recordMasterTurn(state, outcome.text, [], resolveNext(state, outcome.next));
-    report.push(`Мастер: ${rolls.map((roll) => roll.line).join('; ')} → ${describeNext(state)}`);
+    state.session.pendingOutcome = false;
+    await recordMasterTurn(state, outcome.text, [], outcome.sceneEnd);
+    if (!rolls.length) rolls = state.turns.findLast((turn) => turn.rolls?.length)?.rolls ?? [];
+    return {
+        author: 'master',
+        masterChoice: resolveNext(state, outcome.next),
+        sceneEnd: outcome.sceneEnd,
+        detail: rolls.map((roll) => roll.line).join('; '),
+    };
 }
 
-async function recordMasterTurn(state, text, rolls, next) {
-    state.turns.push({ n: state.turns.length + 1, author: 'master', text, rolls, next });
-    if (next) state.session.next = next;
+/**
+ * Частота проверок (новое, PLAN 4.8): после действия героя с вероятностью `frequency` % мастер обязан
+ * проверить его броском, иначе бросков нет. 0 — игра без кубиков, 100 — проверка на каждое действие.
+ * Ход мастера не после героя (открытие сцены, мастер → мастер) идёт без бросков.
+ */
+function decideCheck(state, frequency) {
+    const author = state.turns[state.turns.length - 1]?.author;
+    if (!HERO_IDS.includes(author)) return { mode: 'forbidden' };
+    const required = frequency > 0 && rollDie(100) <= frequency;
+    console.log(`${LOG_PREFIX} проверка действия ${author}: ${required ? 'нужна' : 'нет'} (частота ${frequency} %)`);
+    return required ? { mode: 'required', hero: author } : { mode: 'forbidden' };
+}
+
+async function recordMasterTurn(state, text, rolls, sceneEnd) {
+    state.turns.push({ n: state.turns.length + 1, author: 'master', text, rolls, next: null, sceneEnd: Boolean(sceneEnd) });
     await saveState();
     await postAsMaster(text, { turn: state.turns.length });
 }
@@ -129,7 +209,7 @@ function resolveNext(state, next) {
     return chosen;
 }
 
-async function heroTurn(state, heroIndex, report) {
+async function heroTurn(state, heroIndex, chatId) {
     const settings = getSettings();
     const hero = state.heroes[heroIndex];
     const other = state.heroes[1 - heroIndex];
@@ -142,16 +222,14 @@ async function heroTurn(state, heroIndex, report) {
         messages: buildHeroPrompt({ state, heroIndex, card: toPromptCard(character), language: settings.language }),
         maxTokens: HERO_MAX_TOKENS,
     });
+    assertSameChat(chatId);
     const parsed = parseHeroResponse(raw, { foreignNames: [other.name, 'Мастер', 'Master'] });
 
     state.turns.push({ n: state.turns.length + 1, author: HERO_IDS[heroIndex], ...parsed });
-    hero.silence = 0;
-    other.silence = (other.silence ?? 0) + 1;
-    state.session.next = 'master';
     await saveState();
 
     await postAsCharacter(character, formatHeroMessage(parsed), { author: HERO_IDS[heroIndex], turn: state.turns.length });
-    report.push(`Ход: ${hero.name}`);
+    return { author: HERO_IDS[heroIndex] };
 }
 
 /** Реплика, намерение курсивом и мысли свёрнутым спойлером (FR-11, FR-16). */

@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     language: 'русский',
     maxTurns: 20,
     randomness: 20,
+    checkFrequency: 50, // % действий героев, которые мастер проверяет броском (новое, PLAN 4.8)
     silenceThreshold: 4,
     stopAtSceneEnd: true,
     turnDelaySec: 3,

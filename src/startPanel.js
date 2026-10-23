@@ -1,4 +1,4 @@
-// Панель «Старт игры» (этап 3): мир → две карточки → листы героев → завязка → «Старт».
+// Панель «Старт игры» (этап 3): мир → две карточки → листы героев → завязка. «Старт» автосессии — в src/autosession.js.
 // Черновик хранится прямо в состоянии чата (chatMetadata), поэтому переживает перезагрузку ST.
 
 import { LOG_PREFIX } from './constants.js';
@@ -12,6 +12,7 @@ import {
     HP_MAX, STAT_MAX, STAT_MIN, blankSheet, buildHeroesPrompt, buildWorldPrompt, createHero, parseHeroSheets, parseWorldCard, startProblems,
 } from './setup.js';
 import { playOneTurn, toPromptCard } from './game.js';
+import { renderSession } from './autosession.js';
 
 const SETUP_MAX_TOKENS = 1500;
 const SAVE_DELAY_MS = 600;
@@ -251,7 +252,7 @@ function onHeroFieldInput() {
 
 // ---------- 3.4 Завязка и старт ----------
 
-function refreshButtons() {
+export function refreshButtons() {
     const state = getState();
     if (!state) return;
     const hasPrompt = Boolean(String($('#rpga_world_prompt').val()).trim());
@@ -261,38 +262,22 @@ function refreshButtons() {
     $('#rpga_heroes_manual').toggleClass('rpga-off', !twoCards);
 
     const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
-    $('#rpga_start').toggleClass('rpga-off', problems.length > 0);
+    const running = state.session.status === 'running';
+    $('#rpga_session_start').toggleClass('rpga-off', problems.length > 0 || running);
     $('#rpga_start_hint').text(problems.length ? `Чтобы начать: ${problems.join('; ')}.` : '');
-    $('#rpga_one_turn').toggleClass('rpga-off', !state.turns.length);
+    // «Один ход» (концепция А) работает и без автосессии: первое нажатие открывает сцену.
+    $('#rpga_one_turn').toggleClass('rpga-off', running || (!state.turns.length && problems.length > 0));
+    $('#rpga_reset_scene').toggleClass('rpga-off', running || !state.turns.length);
 }
 
-async function startGame() {
-    const state = requireState();
-    const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
-    if (problems.length) throw new Error(`Нельзя начать: ${problems.join('; ')}`);
-    if (state.turns.length && !confirm('В этом чате уже идёт сцена. Начать заново? История сцены очистится, сообщения в чате останутся.')) return;
-
-    clearTimeout(saveTimer);
-    state.scene.premise = String($('#rpga_premise').val()).trim();
-    resetScene(state);
-    for (const hero of state.heroes) hero.hp.current = hero.hp.max;
-    await saveState();
-
-    gameOutput(state.scene.premise ? 'Мастер открывает сцену по вашей завязке...' : 'Завязки нет, мастер придумывает её сам...');
-    try {
-        const report = await playOneTurn();
-        gameOutput(`Сцена началась.\n${report}\n\n${describeGame()}`);
-    } finally {
-        // Даже если ход сорвался на середине, часть сцены уже записана и «Один ход» должен ожить.
-        refreshButtons();
-    }
-}
-
+/** Чистая сцена: история, очередь и сессия с нуля, хиты героев полные. */
 export function resetScene(state) {
     state.turns = [];
-    state.session.next = 'master';
-    state.session.masterNote = '';
-    for (const hero of state.heroes) hero.silence = 0;
+    Object.assign(state.session, { status: 'idle', reason: '', turnsLeft: 0, next: 'master', masterNote: '', pendingOutcome: false });
+    for (const hero of state.heroes) {
+        hero.silence = 0;
+        hero.hp.current = hero.hp.max;
+    }
 }
 
 export async function resetSceneClick() {
@@ -301,16 +286,27 @@ export async function resetSceneClick() {
     resetScene(state);
     await saveState();
     refreshButtons();
+    renderSession();
     gameOutput(`История сцены очищена.\n${describeGame()}`);
 }
 
 export async function oneTurn() {
+    const state = requireState();
+    if (state.session.status === 'running') throw new Error('Идёт автосессия: сначала нажмите «Пауза»');
+    if (!state.turns.length) {
+        const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
+        if (problems.length) throw new Error(`Нельзя начать: ${problems.join('; ')}`);
+        clearTimeout(saveTimer);
+        resetScene(state);
+        await saveState();
+    }
     gameOutput('Ход идёт...');
     try {
         const report = await playOneTurn();
         gameOutput(`${report}\n\n${describeGame()}`);
     } finally {
         refreshButtons();
+        renderSession();
     }
 }
 
@@ -330,7 +326,6 @@ export function bindStartPanel(bindButton) {
     bindButton('#rpga_world_expand', expandWorld);
     bindButton('#rpga_heroes_generate', generateHeroes);
     bindButton('#rpga_heroes_manual', fillHeroesManually);
-    bindButton('#rpga_start', startGame);
     bindButton('#rpga_one_turn', oneTurn);
     bindButton('#rpga_reset_scene', resetSceneClick);
 

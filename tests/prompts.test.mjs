@@ -88,3 +88,14 @@ test('язык игры попадает в промпты мастера и г�
         assert.ok(prompt.includes('на языке: English'));
     }
 });
+
+test('частота проверок: обязательный бросок, запрет и свободный режим в промпте мастера', () => {
+    const required = text(buildMasterPrompt({ state: makeState(), cards, language: 'русский', check: { mode: 'required', hero: 'hero2' } }));
+    assert.match(required, /проверь броском: поставь ровно одну метку \[ROLL d20 СТАТ DCn hero2\]/);
+    const forbidden = text(buildMasterPrompt({ state: makeState(), cards, language: 'русский', check: { mode: 'forbidden' } }));
+    assert.match(forbidden, /не ставь/);
+    assert.doesNotMatch(forbidden, /Формат метки/);
+    const free = text(buildMasterPrompt({ state: makeState(), cards, language: 'русский' }));
+    assert.match(free, /Если исход действия героя неочевиден/);
+    assert.match(free, /не пиши за них/);
+});

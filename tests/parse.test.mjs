@@ -53,3 +53,17 @@ test('мастер: следующий по имени, без скобок, м�
     assert.equal(parseMasterResponse('Текст без метки.', names).next, null);
     assert.throws(() => parseMasterResponse('[NEXT: hero1]', names), ParseError);
 });
+
+test('метка конца сцены: распознаётся в разных написаниях и вырезается из текста (FR-21)', () => {
+    for (const tag of ['[КОНЕЦ СЦЕНЫ]', '[конец_сцены]', '[SCENE END]', '[END OF SCENE]', '[END_SCENE]', '[Сцена завершена]']) {
+        const parsed = parseMasterResponse(`Костёр догорает, герои засыпают.\n${tag}\n[NEXT: hero1]`);
+        assert.equal(parsed.sceneEnd, true, tag);
+        assert.equal(parsed.text, 'Костёр догорает, герои засыпают.', tag);
+    }
+    assert.equal(parseMasterResponse('Бой продолжается. [NEXT: hero2]').sceneEnd, false);
+});
+
+test('мастер не говорит за героев: строки «Имя: ...» вырезаются', () => {
+    const parsed = parseMasterResponse('Дверь скрипит.\n**Мира:** Кто здесь?\nГррок : Я!\nТрактирщик: Тише!\n[NEXT: hero1]', { heroNames: ['Мира', 'Гррок'] });
+    assert.equal(parsed.text, 'Дверь скрипит.\nТрактирщик: Тише!');
+});
