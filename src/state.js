@@ -11,6 +11,9 @@ export function createEmptyState() {
         version: STATE_VERSION,
         world: null,
         heroes: [],
+        scene: {
+            premise: '',
+        },
         turns: [],
         memory: null,
         chronicle: [],
@@ -18,6 +21,7 @@ export function createEmptyState() {
             status: 'idle', // idle / running / paused / stopped
             turnsLeft: 0,
             masterNote: '',
+            next: 'master', // кто ходит следующим: master / hero1 / hero2
         },
         debug: {
             counter: 0,
@@ -40,7 +44,7 @@ export function getState() {
     if (!chatMetadata[EXTENSION_KEY]) {
         chatMetadata[EXTENSION_KEY] = createEmptyState();
     }
-    return chatMetadata[EXTENSION_KEY];
+    return fillMissing(chatMetadata[EXTENSION_KEY], createEmptyState());
 }
 
 /** Сохраняет метаданные чата на диск (ST пишет их вместе с файлом чата). */
@@ -49,6 +53,18 @@ export async function saveState() {
     if (!state) return;
     stripSecrets(state);
     await SillyTavern.getContext().saveMetadata();
+}
+
+// Состояние, сохранённое старой версией расширения, досыпаем новыми полями.
+function fillMissing(target, defaults) {
+    for (const [key, value] of Object.entries(defaults)) {
+        if (target[key] === undefined) {
+            target[key] = value;
+        } else if (value && typeof value === 'object' && !Array.isArray(value) && target[key] && typeof target[key] === 'object') {
+            fillMissing(target[key], value);
+        }
+    }
+    return target;
 }
 
 function stripSecrets(value) {

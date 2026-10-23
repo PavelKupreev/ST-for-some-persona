@@ -26,3 +26,15 @@
 .rpga-panel .rpga-output:empty {
     display: none;
 }
+
+/* Мысли героя под репликой (FR-16) */
+.mes_text details.rpga-thoughts {
+    margin-top: 6px;
+    opacity: 0.8;
+    font-size: 0.95em;
+}
+
+.mes_text details.rpga-thoughts > summary {
+    cursor: pointer;
+    user-select: none;
+}
