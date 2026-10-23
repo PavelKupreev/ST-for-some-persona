@@ -42,9 +42,11 @@ test('плашка в формате ТЗ', () => {
 
 test('разбор меток броска', () => {
     const text = 'Арен тянется к ключу. [ROLL d20 DEX DC12 hero1]\nИ ещё [roll: d20 ЛОВ DC 15] и мусор [ROLL d20 XYZ DC10].';
+    // Незнакомая проверка не отбрасывается: это может быть способность героя (PLAN 6.4), её узнаёт game.js.
     const rolls = parseRollTags(text);
-    assert.equal(rolls.length, 2);
-    assert.deepEqual(rolls.map((r) => [r.sides, r.stat, r.dc, r.target]), [[20, 'DEX', 12, 'hero1'], [20, 'DEX', 15, '']]);
+    assert.equal(rolls.length, 3);
+    assert.deepEqual(rolls.map((r) => [r.sides, r.stat, r.dc, r.target]), [[20, 'DEX', 12, 'hero1'], [20, 'DEX', 15, ''], [20, null, 10, '']]);
+    assert.equal(rolls[2].check, 'XYZ');
     assert.equal(stripRollTags('Попытка. [ROLL d20 STR DC10]'), 'Попытка.');
 });
 

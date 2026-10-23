@@ -2,6 +2,9 @@
 // Модуль без зависимостей от ST: промпты и разбор JSON проверяются тестом в Node.
 
 import { STATS } from './dice.js';
+// Навыки 5e (PLAN 6.3) отключены по просьбе пользователя:
+// import { SKILLS, SKILL_IDS, normalizeSkillList } from './dice.js';
+import { ABILITY_MAX_LEVEL, normalizeAbilityList } from './abilities.js';
 import { ParseError } from './parse.js';
 import { languageRule } from './prompts.js';
 
@@ -83,13 +86,16 @@ export function buildHeroesPrompt({ world, cards, language }) {
         'Для каждого героя:',
         '- статы STR, DEX, CON, INT, WIS, CHA — целые числа от 1 до 20, по характеру и предыстории карточки (обычный человек ~10, сильная сторона 14–17);',
         '- hp — максимум хитов, целое число (обычно 8–20 для героя первого уровня, с учётом CON);',
+        // Навыки 5e (PLAN 6.3) отключены:
+        // `- skills — 2–4 навыка 5e, которыми герой владеет, по его предыстории и сильным статам; только id из списка: ${SKILL_IDS.map((id) => `${id} (${SKILLS[id].ru})`).join(', ')};`,
+        `- abilities — 1–2 уникальные способности героя по его карточке и миру (например «Огненный шар», «Гигантификация», «Теневой шаг»): name — название, description — что делает на 1-м уровне и как усиливается к ${ABILITY_MAX_LEVEL}-му, одним-двумя предложениями; stat — характеристика проверки (STR, DEX, CON, INT, WIS, CHA);`,
         '- inventory — 2–5 стартовых предметов, подходящих миру и герою;',
         '- globalGoal — глобальная цель, выведенная из предыстории карточки, одним-двумя предложениями;',
         '- microGoal — стартовая микроцель на ближайшую сцену: конкретная, достижимая, тайная от второго героя.',
         '',
         'Ответь только JSON, без пояснений и без markdown, героев в том же порядке:',
         '{"heroes": [',
-        `  {"name": "${names[0]}", "stats": {"STR": 10, "DEX": 10, "CON": 10, "INT": 10, "WIS": 10, "CHA": 10}, "hp": 10, "inventory": ["..."], "globalGoal": "...", "microGoal": "..."},`,
+        `  {"name": "${names[0]}", "stats": {"STR": 10, "DEX": 10, "CON": 10, "INT": 10, "WIS": 10, "CHA": 10}, "hp": 10, "abilities": [{"name": "...", "description": "...", "stat": "INT"}], "inventory": ["..."], "globalGoal": "...", "microGoal": "..."},`,
         `  {"name": "${names[1]}", ...}`,
         ']}',
         '',
@@ -112,7 +118,7 @@ export function buildHeroesPrompt({ world, cards, language }) {
  * Разбирает листы двух героев. Герои сопоставляются по имени, иначе по порядку.
  * @param {string} raw
  * @param {string[]} names имена героя 1 и героя 2
- * @returns {Array<{stats: Record<string, number>, hp: number, inventory: string[], globalGoal: string, microGoal: string}>}
+ * @returns {Array<{stats: Record<string, number>, hp: number, abilities: object[], inventory: string[], globalGoal: string, microGoal: string}>}
  * @throws {ParseError}
  */
 export function parseHeroSheets(raw, names) {
@@ -134,7 +140,7 @@ export function parseHeroSheets(raw, names) {
 
 function normalizeSheet(item) {
     if (!item || typeof item !== 'object') throw new Error('нет данных');
-    const rawStats = pickValue(item, ['stats', 'abilities', 'статы']) ?? item;
+    const rawStats = pickValue(item, ['stats', 'abilityScores', 'ability_scores', 'статы']) ?? item;
     const stats = {};
     for (const [key, value] of Object.entries(rawStats)) {
         const stat = key.slice(0, 3).toUpperCase();
@@ -150,6 +156,8 @@ function normalizeSheet(item) {
     return {
         stats: Object.fromEntries(STATS.map((stat) => [stat, clamp(stats[stat], STAT_MIN, STAT_MAX)])),
         hp: clamp(hp, 1, HP_MAX),
+        // skills: normalizeSkillList(pickValue(item, ['skills', 'proficiencies', 'навыки'])), // навыки 5e отключены
+        abilities: normalizeAbilityList(pickValue(item, ['abilities', 'powers', 'способности'])),
         inventory: toList(pickValue(item, ['inventory', 'items', 'инвентарь'])),
         globalGoal: pickString(item, ['globalGoal', 'global_goal', 'goal', 'цель']),
         microGoal: pickString(item, ['microGoal', 'micro_goal', 'microgoal', 'микроцель']),
@@ -161,6 +169,8 @@ export function blankSheet() {
     return {
         stats: Object.fromEntries(STATS.map((stat) => [stat, 10])),
         hp: 10,
+        // skills: [], // навыки 5e отключены
+        abilities: [],
         inventory: [],
         globalGoal: '',
         microGoal: '',
@@ -178,6 +188,8 @@ export function createHero(card, sheet) {
         name: card.name,
         stats: { ...sheet.stats },
         hp: { current: sheet.hp, max: sheet.hp },
+        // skills: [...(sheet.skills ?? [])], // навыки 5e отключены
+        abilities: (sheet.abilities ?? []).map((ability) => ({ ...ability })),
         inventory: [...sheet.inventory],
         globalGoal: sheet.globalGoal,
         microGoal: sheet.microGoal,

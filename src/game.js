@@ -13,9 +13,13 @@ import { parseHeroResponse, parseMasterResponse, normalizeNext } from './parse.j
 import { HERO_IDS, buildHeroPrompt, buildMasterPrompt } from './prompts.js';
 import { chooseNext, updateSilence } from './turnOrder.js';
 import { consumeMasterNote } from './intervention.js';
+import { applyStateChanges } from './heroState.js';
+import { findAbility, useAbility } from './abilities.js';
+import { applySummaries, buildSummaryPrompts, turnsToCompress } from './memory.js';
 
 const MASTER_MAX_TOKENS = 700;
 const HERO_MAX_TOKENS = 500;
+const SUMMARY_MAX_TOKENS = 600;
 
 /**
  * Один ход одного актора: мастера (с бросками и описанием исхода) или героя, на кого указывает state.session.next.
@@ -44,6 +48,7 @@ export async function playStep() {
     state.turns[state.turns.length - 1].next = choice.next;
     await saveState();
     logChoice(state, step, choice);
+    await compressMemory(state, chatId);
 
     const label = step.author === 'master' ? 'Мастер' : state.heroes[heroIndex].name;
     const reason = { random: ' (случайный выбор)', silence: ' (давно молчал)' }[choice.reason] ?? '';
@@ -108,6 +113,7 @@ async function masterTurn(state, chatId) {
         });
         assertSameChat(chatId);
         const parsed = parseMasterResponse(raw, { heroNames });
+        parsed.rolls = parsed.rolls.map((tag) => planRoll(state, tag, heroNames)).filter(Boolean);
         if (check.mode === 'forbidden' && parsed.rolls.length) {
             console.warn(`${LOG_PREFIX} бросок в этом ходе не положен (частота проверок ${settings.checkFrequency} %), метки пропущены`, parsed.rolls);
             parsed.rolls = [];
@@ -119,16 +125,20 @@ async function masterTurn(state, chatId) {
         useNote(state, note);
 
         if (!parsed.rolls.length) {
-            await recordMasterTurn(state, parsed.text, [], parsed.sceneEnd);
+            await recordMasterTurn(state, parsed.text, [], parsed.sceneEnd, parsed.changes);
             return { author: 'master', masterChoice: resolveNext(state, parsed.next), sceneEnd: parsed.sceneEnd };
         }
 
         // Мастер остановился на попытке: бросаем, показываем плашки, просим описать исход (FR-13, FR-14).
-        rolls = parsed.rolls.map((tag) => performRoll(state, tag, heroNames));
+        rolls = parsed.rolls.map((plan) => performRoll(state, plan));
         state.session.pendingOutcome = true;
-        await recordMasterTurn(state, parsed.text, rolls, false);
+        // Способность, проверенная броском, уже прокачана: в описании исхода её «use» второй раз не считаем.
+        state.session.rolledAbilities = rolls.filter((roll) => roll.ability).map((roll) => `${roll.hero}:${roll.ability}`);
+        const abilityLines = rolls.map((roll) => roll.abilityLine).filter(Boolean);
+        await recordMasterTurn(state, parsed.text, rolls, false, parsed.changes, { extraLines: abilityLines });
         for (const roll of rolls) {
             await postAsMaster(roll.line, { kind: 'roll', roll });
+            if (roll.abilityLine) await postAsMaster(`📋 ${roll.abilityLine}`, { kind: 'state', turn: state.turns.length });
         }
     }
 
@@ -147,7 +157,9 @@ async function masterTurn(state, chatId) {
     }
     useNote(state, outcomeNote);
     state.session.pendingOutcome = false;
-    await recordMasterTurn(state, outcome.text, [], outcome.sceneEnd);
+    const skipUses = state.session.rolledAbilities ?? [];
+    state.session.rolledAbilities = [];
+    await recordMasterTurn(state, outcome.text, [], outcome.sceneEnd, outcome.changes, { skipUses });
     if (!rolls.length) rolls = state.turns.findLast((turn) => turn.rolls?.length)?.rolls ?? [];
     return {
         author: 'master',
@@ -155,6 +167,29 @@ async function masterTurn(state, chatId) {
         sceneEnd: outcome.sceneEnd,
         detail: rolls.map((roll) => roll.line).join('; '),
     };
+}
+
+/**
+ * Сжатие старых ходов в скрытую память (FR-26), когда несжатых ходов больше порога из настроек.
+ * Сорвалось — не беда: ход уже сделан, история пока длиннее, попробуем после следующего хода.
+ */
+async function compressMemory(state, chatId) {
+    const settings = getSettings();
+    const turns = turnsToCompress(state, settings.memoryThreshold);
+    if (!turns.length) return;
+    try {
+        const summaries = {};
+        for (const { key, messages } of buildSummaryPrompts({ state, turns, language: settings.language })) {
+            summaries[key] = await callModel({ role: `memory:${key}`, model: settings.masterModel, messages, maxTokens: SUMMARY_MAX_TOKENS, temperature: 0.3 });
+        }
+        assertSameChat(chatId);
+        const memory = applySummaries(state, turns, summaries);
+        await saveState();
+        console.log(`${LOG_PREFIX} память: сжаты ходы ${turns[0].n}–${memory.upTo}`, memory);
+    } catch (error) {
+        console.warn(`${LOG_PREFIX} не удалось сжать память, попробую после следующего хода`, error);
+        toastr.warning(`Не удалось сжать память: ${error.message}`, 'RPG-автосессия');
+    }
 }
 
 function useNote(state, note) {
@@ -174,28 +209,50 @@ function decideCheck(state, frequency) {
     return required ? { mode: 'required', hero: author } : { mode: 'forbidden' };
 }
 
-async function recordMasterTurn(state, text, rolls, sceneEnd) {
-    state.turns.push({ n: state.turns.length + 1, author: 'master', text, rolls, next: null, sceneEnd: Boolean(sceneEnd) });
+// Изменения HP, статов, инвентаря и применения способностей из блока [STATE ...] (FR-15, FR-31) применяются сразу
+// и видны всем: строки идут в историю и в чат. extraLines — прокачка способностей от бросков, их чат получает после плашек.
+async function recordMasterTurn(state, text, rolls, sceneEnd, changes = [], { extraLines = [], skipUses = [] } = {}) {
+    const changeLines = applyStateChanges(state.heroes, changes, { skipUses });
+    if (changeLines.length) console.log(`${LOG_PREFIX} изменения состояния героев:`, changeLines, changes);
+    state.turns.push({ n: state.turns.length + 1, author: 'master', text, rolls, changes: [...extraLines, ...changeLines], next: null, sceneEnd: Boolean(sceneEnd) });
     await saveState();
     await postAsMaster(text, { turn: state.turns.length });
+    if (changeLines.length) await postAsMaster(changeLines.map((line) => `📋 ${line}`).join('\n'), { kind: 'state', turn: state.turns.length });
 }
 
 /**
+ * Чья проверка и чего: способность героя (PLAN 6.4), навык или характеристика. Непонятная метка → null, броска не будет.
  * @param {object} state
- * @param {{sides: number, stat: string, dc: number, target: string}} tag
+ * @param {{sides: number, stat: string|null, skill: string|null, check: string, dc: number, target: string}} tag
  * @param {string[]} heroNames
  */
-function performRoll(state, tag, heroNames) {
+function planRoll(state, tag, heroNames) {
     const target = normalizeNext(tag.target, heroNames);
     const heroIndex = HERO_IDS.includes(target) ? HERO_IDS.indexOf(target) : lastActiveHero(state);
-    const hero = state.heroes[heroIndex];
-    const natural = rollDie(tag.sides);
-    const result = resolveCheck({ natural, sides: tag.sides, score: hero.stats[tag.stat] ?? 10, dc: tag.dc });
+    const ability = findAbility(state.heroes[heroIndex], tag.check);
+    if (ability) return { ...tag, heroIndex, ability, stat: ability.stat, skill: null };
+    if (tag.stat) return { ...tag, heroIndex, ability: null };
+    console.warn(`${LOG_PREFIX} непонятная проверка «${tag.check}» в ${tag.raw}: это не характеристика и не способность героя, бросок пропущен`);
+    return null;
+}
+
+function performRoll(state, plan) {
+    const hero = state.heroes[plan.heroIndex];
+    const natural = rollDie(plan.sides);
+    const proficient = Boolean(plan.skill && hero.skills?.includes(plan.skill));
+    const bonus = plan.ability?.level ?? 0;
+    const result = resolveCheck({ natural, sides: plan.sides, score: hero.stats[plan.stat] ?? 10, dc: plan.dc, proficient, bonus });
+    const line = formatRoll(result, { heroName: hero.name, stat: plan.stat, skill: plan.skill, ability: plan.ability });
+    // Применение способности прокачивает её при любом исходе броска.
+    const abilityLine = plan.ability ? useAbility(hero, plan.ability).line : '';
     return {
-        hero: HERO_IDS[heroIndex],
-        stat: tag.stat,
+        hero: HERO_IDS[plan.heroIndex],
+        stat: plan.stat,
+        skill: plan.skill,
+        ability: plan.ability?.name ?? null,
         ...result,
-        line: formatRoll(result, { heroName: hero.name, stat: tag.stat }),
+        line,
+        abilityLine,
     };
 }
 

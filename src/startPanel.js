@@ -6,6 +6,9 @@ import { getSettings } from './settings.js';
 import { getState, saveState } from './state.js';
 import { callModel } from './llm.js';
 import { STATS } from './dice.js';
+// Навыки 5e (PLAN 6.3) отключены по просьбе пользователя:
+// import { SKILLS, SKILL_IDS } from './dice.js';
+import { ABILITIES_MAX, ABILITY_MAX_LEVEL, blankAbility, progressText } from './abilities.js';
 import { ParseError } from './parse.js';
 import { HERO_IDS } from './prompts.js';
 import {
@@ -213,6 +216,19 @@ function renderHeroForms(state) {
         ));
         form.append(stats);
 
+        // Навыки с владением (PLAN 6.3) отключены по просьбе пользователя:
+        // form.append($('<label>').text('Навыки с владением'));
+        // const skills = $('<div class="rpga-skills">');
+        // for (const id of SKILL_IDS) {
+        //     skills.append($('<label class="rpga-skill">').attr('title', `${SKILLS[id].en}, ${SKILLS[id].stat}`).append(
+        //         $('<input type="checkbox">').attr('data-skill', id).prop('checked', Boolean(hero.skills?.includes(id))),
+        //         $('<span>').text(`${SKILLS[id].ru} · ${SKILLS[id].stat}`),
+        //     ));
+        // }
+        // form.append(skills);
+
+        form.append(renderAbilityEditor(hero));
+
         form.append($('<label>').text('Инвентарь (через запятую)'));
         form.append($('<input type="text" class="text_pole" data-field="inventory">').val(hero.inventory.join(', ')));
         form.append($('<label>').text('Глобальная цель'));
@@ -223,6 +239,59 @@ function renderHeroForms(state) {
     });
 }
 
+// Уникальные способности (новое, PLAN 6.4): название, характеристика, уровень, описание; до ABILITIES_MAX штук.
+function renderAbilityEditor(hero) {
+    hero.abilities ??= [];
+    const box = $('<div class="rpga-abilities">');
+    box.append($('<label>').text(`Уникальные способности (растут от применения, уровень 1–${ABILITY_MAX_LEVEL})`));
+    hero.abilities.forEach((ability, index) => {
+        const row = $('<div class="rpga-ability">').attr('data-ability', index);
+        const head = $('<div class="rpga-ability-head">');
+        head.append($('<input type="text" class="text_pole" placeholder="Название" data-afield="name">').val(ability.name));
+        const stat = $('<select class="text_pole" data-afield="stat" title="Характеристика проверки">');
+        for (const id of STATS) stat.append($('<option>').val(id).text(id));
+        head.append(stat.val(ability.stat));
+        head.append($('<input type="number" class="text_pole" data-afield="level" title="Уровень">').attr({ min: 1, max: ABILITY_MAX_LEVEL }).val(ability.level));
+        head.append($('<div class="menu_button rpga-ability-del" title="Удалить способность">✕</div>'));
+        row.append(head);
+        row.append($('<small class="rpga-ability-progress">').text(`Применений: ${ability.uses} · ${progressText(ability)}`));
+        row.append($('<textarea class="text_pole" rows="2" placeholder="Что делает и как усиливается" data-afield="description">').val(ability.description));
+        box.append(row);
+    });
+    if (hero.abilities.length < ABILITIES_MAX) box.append($('<div class="menu_button rpga-ability-add">+ Способность</div>'));
+    return box;
+}
+
+function onAbilityButton(event) {
+    const state = getState();
+    if (!state || !heroesMatchSelection(state)) return;
+    const button = $(event.currentTarget);
+    const hero = state.heroes[Number(button.closest('.rpga-hero-form').data('hero'))];
+    hero.abilities ??= [];
+    if (button.hasClass('rpga-ability-add')) {
+        if (hero.abilities.length < ABILITIES_MAX) hero.abilities.push(blankAbility());
+    } else {
+        hero.abilities.splice(Number(button.closest('.rpga-ability').data('ability')), 1);
+    }
+    renderHeroForms(state);
+    saveSoon();
+}
+
+function onAbilityFieldInput(input, hero) {
+    const ability = hero.abilities?.[Number(input.closest('.rpga-ability').data('ability'))];
+    if (!ability) return;
+    const field = input.data('afield');
+    const value = String(input.val());
+    if (field === 'level') {
+        const level = parseInt(value, 10);
+        const valid = level >= 1 && level <= ABILITY_MAX_LEVEL;
+        input.toggleClass('rpga-bad', !valid);
+        if (valid) ability.level = level;
+    } else {
+        ability[field] = field === 'stat' ? value : value.trim();
+    }
+}
+
 function onHeroFieldInput() {
     const state = getState();
     if (!state || !heroesMatchSelection(state)) return;
@@ -231,8 +300,16 @@ function onHeroFieldInput() {
     const value = String(input.val());
     const stat = input.data('stat');
     const field = input.data('field');
+    const skill = input.data('skill');
 
-    if (stat) {
+    if (input.data('afield')) {
+        onAbilityFieldInput(input, hero);
+    } else if (skill) {
+        const own = new Set(hero.skills ?? []);
+        if (input.prop('checked')) own.add(skill);
+        else own.delete(skill);
+        hero.skills = SKILL_IDS.filter((id) => own.has(id));
+    } else if (stat) {
         hero.stats[stat] = parseInt(value, 10);
         input.toggleClass('rpga-bad', !(hero.stats[stat] >= STAT_MIN && hero.stats[stat] <= STAT_MAX));
     } else if (field === 'hp') {
@@ -276,6 +353,7 @@ export function refreshButtons() {
  */
 export function resetScene(state) {
     state.turns = [];
+    state.memory = null;
     Object.assign(state.session, { status: 'idle', reason: '', turnsLeft: 0, next: 'master', pendingOutcome: false });
     for (const hero of state.heroes) {
         hero.silence = 0;
@@ -346,7 +424,9 @@ export function bindStartPanel(bindButton) {
         if (state) renderCardList(state);
     });
     $('#rpga_card_list').on('change', 'input[type="checkbox"]', onCardToggle);
-    $('#rpga_hero_forms').on('input', 'input, textarea', onHeroFieldInput);
+    $('#rpga_hero_forms').on('input', 'input:not([type=checkbox]), textarea', onHeroFieldInput);
+    $('#rpga_hero_forms').on('change', 'input[type=checkbox], select', onHeroFieldInput);
+    $('#rpga_hero_forms').on('click', '.rpga-ability-add, .rpga-ability-del', onAbilityButton);
     $('#rpga_premise').on('input', function () {
         const state = getState();
         if (!state) return;

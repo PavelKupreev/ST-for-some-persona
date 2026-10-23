@@ -28,6 +28,7 @@ export function createEmptyState() {
             masterNote: '',
             next: 'master', // кто ходит следующим: master / hero1 / hero2
             pendingOutcome: false, // броски сделаны, описание исхода ещё не получено
+            rolledAbilities: [], // способности, прокачанные бросками этого хода: «hero1:Огненный шар» (PLAN 6.4)
         },
         debug: {
             counter: 0,

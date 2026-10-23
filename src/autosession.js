@@ -8,6 +8,7 @@ import { getSettings } from './settings.js';
 import { getState, saveState } from './state.js';
 import { postSystemNote } from './chat.js';
 import { STATS, abilityModifier } from './dice.js';
+import { progressText } from './abilities.js';
 import { playStep } from './game.js';
 import { HERO_IDS } from './prompts.js';
 import { startProblems } from './setup.js';
@@ -221,12 +222,18 @@ function renderHeroCards(state) {
     for (const hero of state.heroes) {
         const { current, max } = hero.hp;
         const percent = max > 0 ? Math.max(0, Math.min(100, Math.round((current / max) * 100))) : 0;
-        const card = $('<div class="rpga-hero-mini">');
+        const card = $('<div class="rpga-hero-mini">').toggleClass('rpga-down', current <= 0);
         card.append($('<div class="rpga-hero-mini-head">')
             .append($('<b>').text(hero.name))
             .append($('<span class="rpga-hp-text">').text(`HP ${current}/${max}`)));
         card.append($('<div class="rpga-hp-bar">').append($('<div class="rpga-hp-fill">').css('width', `${percent}%`)));
         card.append($('<small class="rpga-stat-line">').text(STATS.map((stat) => `${stat} ${hero.stats[stat]} (${formatMod(hero.stats[stat])})`).join(' · ')));
+        // Навыки 5e (PLAN 6.3) отключены по просьбе пользователя:
+        // card.append($('<small class="rpga-skill-line">').text(`🛠 ${hero.skills?.length ? hero.skills.map((id) => SKILLS[id]?.ru ?? id).join(', ') : '—'}`).attr('title', 'Навыки с владением: +2 к проверке'));
+        for (const ability of (hero.abilities ?? []).filter((item) => item.name)) {
+            card.append($('<small class="rpga-ability-line">').text(`✨ ${ability.name} · ${progressText(ability)}`).attr('title', ability.description || ability.name));
+        }
+        card.append($('<small class="rpga-inv-line">').text(`🎒 ${hero.inventory?.length ? hero.inventory.join(', ') : '—'}`).attr('title', 'Инвентарь'));
         card.append($('<small class="rpga-micro-line">').text(`🎯 ${hero.microGoal || '—'}`).attr('title', 'Тайная микроцель: видят только этот герой и мастер'));
         box.append(card);
     }

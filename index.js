@@ -53,6 +53,7 @@ function bindSettings() {
     bindNumber('#rpga_randomness', 'randomness', 0, 100);
     bindNumber('#rpga_check_frequency', 'checkFrequency', 0, 100);
     bindNumber('#rpga_silence', 'silenceThreshold', 0, 50);
+    bindNumber('#rpga_memory_threshold', 'memoryThreshold', 0, 200);
     $('#rpga_stop_scene_end').prop('checked', settings.stopAtSceneEnd).on('change', function () {
         updateSettings({ stopAtSceneEnd: $(this).prop('checked') });
     });

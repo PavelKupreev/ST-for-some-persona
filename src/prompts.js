@@ -5,10 +5,13 @@
 // Мысли, цели и микроцель другого героя сюда не передаются вообще, а не вырезаются потом.
 
 import { STATS, abilityModifier } from './dice.js';
+// Навыки 5e (PLAN 6.3) отключены по просьбе пользователя, код оставлен закомментированным.
+// import { PROFICIENCY_BONUS, SKILLS, SKILL_IDS } from './dice.js';
+import { ABILITY_MAX_LEVEL, formatAbilities } from './abilities.js';
 
 export const HERO_IDS = ['hero1', 'hero2'];
 
-// Сколько последних ходов попадает в промпт. Сжатие старых ходов — этап 6 (FR-26).
+// Сколько последних ходов попадает в промпт. Более старые сжимаются в память (src/memory.js, FR-26).
 export const HISTORY_LIMIT = 40;
 const CARD_LIMIT = 3000;
 
@@ -30,8 +33,26 @@ export function languageRule(language, subject = 'Весь текст') {
 }
 
 const ROLL_FORMAT = [
-    '  Формат метки: [ROLL d20 СТАТ DCn ГЕРОЙ], где СТАТ — STR, DEX, CON, INT, WIS или CHA, n — сложность 5–25, ГЕРОЙ — hero1 или hero2.',
-    '  Пример: [ROLL d20 DEX DC12 hero1]',
+    '  Формат метки: [ROLL d20 ПРОВЕРКА DCn ГЕРОЙ], где n — сложность 5–25, ГЕРОЙ — hero1 или hero2,',
+    '  ПРОВЕРКА — характеристика STR, DEX, CON, INT, WIS, CHA или, если герой применяет уникальную способность, её название из листа.',
+    // Навыки 5e (PLAN 6.3) отключены:
+    // `  ПРОВЕРКА — навык 5e (${SKILL_IDS.join(', ')}) или, если ни один навык не подходит, характеристика STR, DEX, CON, INT, WIS, CHA.`,
+    '  Примеры: [ROLL d20 DEX DC12 hero1], [ROLL d20 Огненный шар DC14 hero2]',
+];
+
+// Уникальные способности (PLAN 6.4, FR-31): сила растёт с уровнем, применение прокачивает.
+const ABILITY_RULES = [
+    `- Уникальные способности героев — их главная сила. Уровень 1–${ABILITY_MAX_LEVEL}: чем выше, тем мощнее эффект (урон, дальность, длительность, масштаб). Описывай эффект соответственно уровню.`,
+    '  Каждое применение прокачивает способность. Применение с неочевидным исходом проверяй броском по названию способности (к броску прибавится её уровень);',
+    '  применение без броска отметь в блоке STATE полем "use": [ROLL] и "use" для одного применения вместе не ставь.',
+];
+
+// Изменения листа героя (FR-15): мастер пишет их отдельным блоком, код применяет.
+const STATE_RULES = [
+    '- Если у героя изменились HP, статы или инвентарь (урон, лечение, нашёл, потерял, потратил предмет), добавь отдельной строкой блок:',
+    '  [STATE {"hero1": {"hp": -5, "add": ["ржавый ключ"], "remove": ["факел"]}, "hero2": {"stats": {"STR": -1}, "use": ["Теневой шаг"]}}]',
+    '  hp и stats — изменения со знаком, а не новые значения; add и remove — предметы; use — применённые без броска способности. Указывай только то, что изменилось. Нет изменений — нет блока.',
+    '  Урон и потерю предметов давай только как исход действий или событий, броски не выдумывай.',
 ];
 
 // Правила бросков зависят от настройки «Частота проверок»: в этом ходе бросок обязателен, запрещён или на усмотрение мастера.
@@ -72,6 +93,8 @@ export function buildMasterPrompt({ state, cards, language, mode = 'turn', check
         '- Твоя часть — результат действий героев, реакция мира, глобальные события и речь NPC (прямой речью).',
         '- Не пересказывай и не цитируй реплики героев, не пиши за них ни слова, ни мыслей, ни новых действий: их реплики уже есть в истории, герои говорят сами.',
         ...checkRules(check),
+        ...STATE_RULES,
+        ...ABILITY_RULES,
         '- Последней строкой всегда выбери, кто действует дальше: [NEXT: hero1], [NEXT: hero2] или [NEXT: master] (если сцене нужно ещё твоё описание).',
         '- Двигай сюжет к глобальным целям героев, давай поводы для микроцелей, но не раскрывай одному герою тайны другого.',
         '- Когда сцена логически завершена (цель сцены достигнута или провалена, герои покидают место, наступает пауза в событиях), опиши финал и поставь отдельной строкой метку [КОНЕЦ СЦЕНЫ] перед [NEXT: ...]. Не ставь её посреди событий.',
@@ -101,6 +124,7 @@ export function buildMasterPrompt({ state, cards, language, mode = 'turn', check
     if (mode !== 'outcome') task = [task, checkTask(check)].filter(Boolean).join(' ');
 
     const user = [
+        ...formatMemory(state, 'master'),
         '### ИСТОРИЯ СЦЕНЫ',
         formatHistory(state, { viewer: 'master' }) || '(сцена ещё не началась)',
         '',
@@ -150,6 +174,8 @@ export function buildHeroPrompt({ state, heroIndex, card, language }) {
         `### ТВОЯ ТАЙНАЯ МИКРОЦЕЛЬ (${otherName} о ней не знает)`,
         hero.microGoal || '—',
         '',
+        'Твои уникальные способности — твоя сила, применяй их, когда это уместно: чем чаще применяешь, тем сильнее они становятся. Исход применения решает Мастер.',
+        '',
         '### ФОРМАТ ОТВЕТА',
         'Ровно три части с метками, без другого текста:',
         'РЕПЛИКА: что ты говоришь вслух, не больше одного абзаца (или «—», если молчишь)',
@@ -158,6 +184,7 @@ export function buildHeroPrompt({ state, heroIndex, card, language }) {
     ];
 
     const user = [
+        ...formatMemory(state, HERO_IDS[heroIndex]),
         '### ЧТО ПРОИСХОДИЛО',
         formatHistory(state, { viewer: HERO_IDS[heroIndex] }) || '(сцена ещё не началась)',
         '',
@@ -178,10 +205,23 @@ export function buildHeroPrompt({ state, heroIndex, card, language }) {
  * @param {'master'|'hero1'|'hero2'} options.viewer
  */
 export function formatHistory(state, { viewer }) {
-    return state.turns.slice(-HISTORY_LIMIT).map((turn) => {
+    const upTo = state.memory?.upTo ?? 0;
+    return formatTurns(state, state.turns.filter((turn) => turn.n > upTo).slice(-HISTORY_LIMIT), { viewer });
+}
+
+/**
+ * Ходы глазами viewer. public — без чьих-либо мыслей (для общей памяти).
+ * @param {object} state
+ * @param {object[]} turns
+ * @param {object} options
+ * @param {'master'|'hero1'|'hero2'|'public'} options.viewer
+ */
+export function formatTurns(state, turns, { viewer }) {
+    return turns.map((turn) => {
         if (turn.author === 'master') {
             const lines = [`Мастер: ${turn.text}`];
             for (const roll of turn.rolls ?? []) lines.push(roll.line);
+            for (const change of turn.changes ?? []) lines.push(`📋 ${change}`);
             return lines.join('\n');
         }
 
@@ -195,6 +235,25 @@ export function formatHistory(state, { viewer }) {
         }
         return lines.join('\n');
     }).join('\n\n');
+}
+
+/**
+ * Блок памяти (FR-26). Общую память видят все, пересказ мыслей героя — только он сам и мастер (NFR-01).
+ * @param {object} state
+ * @param {'master'|'hero1'|'hero2'} viewer
+ * @returns {string[]} строки промпта, пусто, если памяти нет
+ */
+export function formatMemory(state, viewer) {
+    const memory = state.memory;
+    if (!memory?.upTo) return [];
+    const lines = ['### ПАМЯТЬ: ЧТО БЫЛО РАНЬШЕ', memory.public || '—', ''];
+    HERO_IDS.forEach((id, index) => {
+        const thoughts = memory.thoughts?.[id];
+        if (!thoughts || (viewer !== 'master' && viewer !== id)) return;
+        const title = viewer === id ? 'ТВОИ ПРЕЖНИЕ МЫСЛИ' : `ПРЕЖНИЕ МЫСЛИ ГЕРОЯ ${index + 1} (${state.heroes[index]?.name ?? id})`;
+        lines.push(`### ${title}`, thoughts, '');
+    });
+    return lines;
 }
 
 function withPeriod(text) {
@@ -244,5 +303,15 @@ function formatSheet(hero) {
         return `${stat} ${score} (${mod >= 0 ? '+' : ''}${mod})`;
     }).join(', ');
     const inventory = hero.inventory?.length ? hero.inventory.join(', ') : '—';
-    return `Статы: ${stats}\nHP: ${hero.hp?.current ?? '?'}/${hero.hp?.max ?? '?'}\nИнвентарь: ${inventory}`;
+    // Навыки 5e (PLAN 6.3) отключены:
+    // const skills = hero.skills?.length
+    //     ? hero.skills.filter((id) => SKILLS[id]).map((id) => `${SKILLS[id].ru} (${id}, ${SKILLS[id].stat})`).join(', ')
+    //     : '—';
+    // ...`\nНавыки с владением (+${PROFICIENCY_BONUS} к проверке): ${skills}`
+    return [
+        `Статы: ${stats}`,
+        `HP: ${hero.hp?.current ?? '?'}/${hero.hp?.max ?? '?'}`,
+        ...formatAbilities(hero),
+        `Инвентарь: ${inventory}`,
+    ].join('\n');
 }

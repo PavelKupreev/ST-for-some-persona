@@ -184,6 +184,67 @@
     opacity: 0.8;
 }
 
+/* Состояние героев (этап 6) */
+.rpga-panel .rpga-inv-line,
+.rpga-panel .rpga-skill-line {
+    opacity: 0.8;
+}
+
+/* Уникальные способности (этап 6, новое) */
+.rpga-panel .rpga-ability-line {
+    display: block;
+}
+
+.rpga-panel .rpga-ability {
+    border-left: 2px solid var(--SmartThemeQuoteColor, #e18a24);
+    padding-left: 6px;
+    margin: 4px 0;
+}
+
+.rpga-panel .rpga-ability-head {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.rpga-panel .rpga-ability-head input[data-afield="name"] {
+    flex: 1;
+}
+
+.rpga-panel .rpga-ability-head select,
+.rpga-panel .rpga-ability-head input[type="number"] {
+    width: 4.5em;
+    flex: none;
+}
+
+.rpga-panel .rpga-ability textarea {
+    width: 100%;
+}
+
+.rpga-panel .rpga-ability-progress {
+    opacity: 0.7;
+}
+
+/* Навыки (этап 6, новое) */
+.rpga-panel .rpga-skills {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 2px 8px;
+}
+
+.rpga-panel .rpga-skill {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.rpga-panel .rpga-down .rpga-hp-text {
+    color: #c0392b;
+    font-weight: bold;
+}
+
 /* Вмешательство (этап 5) */
 .rpga-panel .rpga-micro-line {
     opacity: 0.8;

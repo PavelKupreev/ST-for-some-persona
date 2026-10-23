@@ -2,6 +2,7 @@
 // Модуль без зависимостей от ST, проверяется тестом в Node.
 
 import { parseRollTags, stripRollTags } from './dice.js';
+import { extractStateChanges } from './heroState.js';
 
 export class ParseError extends Error {
     constructor(message, raw) {
@@ -128,11 +129,14 @@ const SCENE_END_TAG = /\[\s*(?:КОНЕЦ[\s_-]*СЦЕНЫ|СЦЕНА[\s_-]*ЗА
  * @param {string} raw
  * @param {object} [options]
  * @param {string[]} [options.heroNames] имена героя 1 и героя 2, чтобы понять «[NEXT: Арен]»
- * @returns {{text: string, next: 'hero1'|'hero2'|'master'|null, rolls: ReturnType<typeof parseRollTags>, sceneEnd: boolean}}
+ * @returns {{text: string, next: 'hero1'|'hero2'|'master'|null, rolls: ReturnType<typeof parseRollTags>, sceneEnd: boolean,
+ *   changes: ReturnType<typeof extractStateChanges>['changes']}} changes — изменения HP, статов и инвентаря (FR-15)
  */
 export function parseMasterResponse(raw, { heroNames = [] } = {}) {
-    const source = String(raw ?? '').replace(/\r\n?/g, '\n').trim();
-    if (!source) throw new ParseError('Пустой ответ мастера', raw);
+    const trimmed = String(raw ?? '').replace(/\r\n?/g, '\n').trim();
+    if (!trimmed) throw new ParseError('Пустой ответ мастера', raw);
+    // Блок изменений вырезаем первым: внутри JSON могут быть скобки и слова, похожие на метки.
+    const { text: source, changes } = extractStateChanges(trimmed, heroNames);
 
     let next = null;
     for (const match of [...source.matchAll(NEXT_TAG), ...source.matchAll(NEXT_LINE)]) {
@@ -148,7 +152,7 @@ export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     text = dropSpeakerLines(text, heroNames);
     if (!text) throw new ParseError('В ответе мастера нет текста, только служебные метки', raw);
 
-    return { text, next, rolls, sceneEnd };
+    return { text, next, rolls, sceneEnd, changes };
 }
 
 function dropSpeakerLines(text, names) {

@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     randomness: 20,
     checkFrequency: 50, // % действий героев, которые мастер проверяет броском (новое, PLAN 4.8)
     silenceThreshold: 4,
+    memoryThreshold: 30, // несжатых ходов, после которых старые уходят в скрытую память (FR-26); 0 — без сжатия
     stopAtSceneEnd: true,
     turnDelaySec: 3,
     logPrompts: false,
