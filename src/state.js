@@ -11,6 +11,10 @@ export function createEmptyState() {
         version: STATE_VERSION,
         world: null,
         heroes: [],
+        setup: {
+            worldPrompt: '', // черновик промпта мира до «Расширить» (FR-01)
+            selected: [], // аватары выбранных карточек ST по порядку: герой 1, герой 2 (FR-03)
+        },
         scene: {
             premise: '',
         },
@@ -44,7 +48,10 @@ export function getState() {
     if (!chatMetadata[EXTENSION_KEY]) {
         chatMetadata[EXTENSION_KEY] = createEmptyState();
     }
-    return fillMissing(chatMetadata[EXTENSION_KEY], createEmptyState());
+    const state = fillMissing(chatMetadata[EXTENSION_KEY], createEmptyState());
+    // Чат с героями из версии до этапа 3: выбор карточек восстанавливаем по героям.
+    if (!state.setup.selected.length && state.heroes.length) state.setup.selected = state.heroes.map((hero) => hero.cardAvatar);
+    return state;
 }
 
 /** Сохраняет метаданные чата на диск (ST пишет их вместе с файлом чата). */

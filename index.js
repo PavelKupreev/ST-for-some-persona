@@ -1,15 +1,14 @@
 // Точка входа расширения «RPG-автосессия».
 // Этап 1: панель с настройками моделей и тестовыми кнопками для проверки каркаса.
-// Этап 2: ход по кнопке на тестовых данных (мастер → герой, броски, мысли спойлером).
+// Этап 2: ход по кнопке (мастер → герой, броски, мысли спойлером).
+// Этап 3: старт игры — мир, две карточки, листы героев, завязка, язык игры (src/startPanel.js).
 
 import { EXTENSION_ROOT, LOG_PREFIX } from './src/constants.js';
 import { getSettings, updateSettings } from './src/settings.js';
 import { getState, saveState } from './src/state.js';
 import { callModel } from './src/llm.js';
 import { postAsCharacter, postAsMaster } from './src/chat.js';
-import { DEMO_PREMISE, DEMO_WORLD, createDemoHero } from './src/demo.js';
-import { playOneTurn } from './src/game.js';
-import { HERO_IDS } from './src/prompts.js';
+import { bindStartPanel, describeGame, gameOutput, renderStartPanel } from './src/startPanel.js';
 
 const PING_MESSAGES = [
     { role: 'system', content: 'Ты помогаешь проверить подключение. Отвечай одной короткой фразой на русском.' },
@@ -37,6 +36,9 @@ function bindSettings() {
     });
     $('#rpga_hero_model').val(settings.heroModel).on('input', function () {
         updateSettings({ heroModel: String($(this).val()).trim() });
+    });
+    $('#rpga_language').val(settings.language).on('input', function () {
+        updateSettings({ language: String($(this).val()).trim() || 'русский' });
     });
     $('#rpga_log_prompts').prop('checked', settings.logPrompts).on('change', function () {
         updateSettings({ logPrompts: $(this).prop('checked') });
@@ -87,9 +89,8 @@ async function testState() {
 function showStateOnChatChange() {
     const state = getState();
     output(state ? `Открыт чат, счётчик: ${state.debug.counter}` : '');
+    renderStartPanel();
     gameOutput(describeGame());
-    $('.rpga-hero-select').val(null);
-    fillHeroSelects();
 }
 
 // 1.4: одно сообщение от мастера и одно от героя.
@@ -110,79 +111,10 @@ async function testMessages() {
     output(`Отправлены сообщения от «Мастера» и от «${character.name}».`);
 }
 
-function gameOutput(text) {
-    $('#rpga_game_output').text(text);
-}
-
-// Списки карточек для выбора героев. Библиотека ST грузится позже расширения, поэтому заполняем при открытии списка.
-function fillHeroSelects() {
-    const { characters } = SillyTavern.getContext();
-    const heroes = getState()?.heroes ?? [];
-    $('.rpga-hero-select').each(function (index) {
-        const select = $(this);
-        const selected = select.val() || heroes[index]?.cardAvatar || characters[index]?.avatar;
-        select.empty();
-        for (const character of characters) {
-            select.append($('<option>').val(character.avatar).text(character.name));
-        }
-        if (selected) select.val(selected);
-    });
-}
-
-function describeGame() {
-    const state = getState();
-    if (!state) return '';
-    if (state.heroes.length !== 2) return 'Героев нет. Выберите две карточки и нажмите «Тестовые данные».';
-    const next = state.session.next;
-    const nextName = HERO_IDS.includes(next) ? state.heroes[HERO_IDS.indexOf(next)].name : 'Мастер';
-    return [
-        ...state.heroes.map((hero, index) => `Герой ${index + 1}: ${hero.name}, HP ${hero.hp.current}/${hero.hp.max}. Микроцель: ${hero.microGoal || '—'}`),
-        `Записей в истории сцены: ${state.turns.length}. Следующий ход: ${nextName}.`,
-    ].join('\n');
-}
-
-async function setupDemo() {
-    const state = getState();
-    if (!state) throw new Error('Сначала откройте чат');
-    const avatars = [$('#rpga_hero1').val(), $('#rpga_hero2').val()];
-    if (!avatars[0] || !avatars[1] || avatars[0] === avatars[1]) throw new Error('Выберите две разные карточки');
-    if (state.turns.length && !confirm('В этом чате уже идёт сцена. Начать заново с тестовыми данными?')) return;
-
-    const { characters } = SillyTavern.getContext();
-    const cards = avatars.map((avatar) => characters.find((character) => character.avatar === avatar));
-    state.world = structuredClone(DEMO_WORLD);
-    state.heroes = cards.map(createDemoHero);
-    state.scene.premise = DEMO_PREMISE;
-    resetScene(state);
-    await saveState();
-    gameOutput(`Тестовые данные записаны в этот чат.\n${describeGame()}`);
-}
-
-function resetScene(state) {
-    state.turns = [];
-    state.session.next = 'master';
-    state.session.masterNote = '';
-    for (const hero of state.heroes) hero.silence = 0;
-}
-
-async function resetSceneClick() {
-    const state = getState();
-    if (!state) throw new Error('Сначала откройте чат');
-    resetScene(state);
-    await saveState();
-    gameOutput(`История сцены очищена, сообщения в чате остались как были.\n${describeGame()}`);
-}
-
-async function oneTurn() {
-    gameOutput('Ход идёт...');
-    const report = await playOneTurn();
-    gameOutput(`${report}\n\n${describeGame()}`);
-}
-
 function bindButton(selector, handler, show = output) {
     $(selector).on('click', async function () {
         const button = $(this);
-        if (button.hasClass('disabled')) return;
+        if (button.hasClass('disabled') || button.hasClass('rpga-off')) return;
         button.addClass('disabled');
         try {
             await handler();
@@ -203,12 +135,7 @@ jQuery(async () => {
         bindButton('#rpga_test_models', testModels);
         bindButton('#rpga_test_state', testState);
         bindButton('#rpga_test_messages', testMessages);
-        bindButton('#rpga_demo_setup', setupDemo, gameOutput);
-        bindButton('#rpga_one_turn', oneTurn, gameOutput);
-        bindButton('#rpga_reset_scene', resetSceneClick, gameOutput);
-        $('.rpga-hero-select').on('mousedown focus', function () {
-            if (!$(this).children().length) fillHeroSelects();
-        });
+        bindStartPanel((selector, handler) => bindButton(selector, handler, gameOutput));
 
         const { eventSource, eventTypes } = SillyTavern.getContext();
         eventSource.on(eventTypes.CHAT_CHANGED, showStateOnChatChange);

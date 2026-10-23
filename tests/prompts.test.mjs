@@ -69,3 +69,22 @@ test('первый ход мастера просит начать сцену с
     const prompt = text(buildMasterPrompt({ state, cards, language: 'русский' }));
     assert.ok(prompt.includes('Начни сцену') && prompt.includes('Вечер в трактире'));
 });
+
+test('пустая завязка: мастер придумывает её сам', () => {
+    const state = makeState();
+    state.turns = [];
+    state.scene.premise = '  ';
+    const prompt = text(buildMasterPrompt({ state, cards, language: 'русский' }));
+    assert.ok(prompt.includes('Начни сцену') && prompt.includes('Завязки нет: придумай её сам'));
+});
+
+test('язык игры попадает в промпты мастера и героев (NFR-06)', () => {
+    const state = makeState();
+    for (const prompt of [
+        text(buildMasterPrompt({ state, cards, language: 'English' })),
+        text(buildHeroPrompt({ state, heroIndex: 0, card: cards[0], language: 'English' })),
+        text(buildHeroPrompt({ state, heroIndex: 1, card: cards[1], language: 'English' })),
+    ]) {
+        assert.ok(prompt.includes('на языке: English'));
+    }
+});

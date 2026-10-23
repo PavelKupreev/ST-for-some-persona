@@ -37,7 +37,7 @@ export async function playOneTurn() {
 function requireGame() {
     const state = getState();
     if (!state) throw new Error('Сначала откройте чат');
-    if (state.heroes.length !== 2) throw new Error('Нет героев: нажмите «Тестовые данные»');
+    if (state.heroes.length !== 2) throw new Error('Нет героев: подготовьте мир и героев в «Старте игры»');
     return state;
 }
 
@@ -178,7 +178,7 @@ function findCharacter(hero) {
     return SillyTavern.getContext().characters.find((character) => character.avatar === hero.cardAvatar) ?? null;
 }
 
-function toPromptCard(character) {
+export function toPromptCard(character) {
     if (!character) return null;
     return {
         name: character.name,

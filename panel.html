@@ -6,7 +6,7 @@
         </div>
         <div class="inline-drawer-content">
             <div class="rpga-section">
-                <h4>Модели OpenRouter</h4>
+                <h4>Настройки</h4>
                 <label for="rpga_transport">Способ вызова</label>
                 <select id="rpga_transport" class="text_pole">
                     <option value="direct">Напрямую в OpenRouter (ключ ниже, основной)</option>
@@ -25,6 +25,15 @@
                 <label for="rpga_hero_model">Модель героев (B)</label>
                 <input id="rpga_hero_model" class="text_pole" type="text" placeholder="openai/gpt-4o-mini">
 
+                <label for="rpga_language">Язык игры</label>
+                <input id="rpga_language" class="text_pole" type="text" list="rpga_language_list" placeholder="русский">
+                <datalist id="rpga_language_list">
+                    <option value="русский"></option>
+                    <option value="English"></option>
+                    <option value="українська"></option>
+                </datalist>
+                <small>На нём пишут мастер и герои, даже если карточки на другом языке.</small>
+
                 <label class="checkbox_label" for="rpga_log_prompts">
                     <input id="rpga_log_prompts" type="checkbox">
                     <span>Лог промптов в консоль браузера (F12)</span>
@@ -32,16 +41,48 @@
             </div>
 
             <div class="rpga-section">
-                <h4>Игра: ход по кнопке</h4>
-                <small>Пока нет старта игры (этап 3), мир и статы берутся из тестовых данных.</small>
-                <label for="rpga_hero1">Герой 1</label>
-                <select id="rpga_hero1" class="text_pole rpga-hero-select"></select>
-                <label for="rpga_hero2">Герой 2</label>
-                <select id="rpga_hero2" class="text_pole rpga-hero-select"></select>
-                <div class="rpga-buttons">
-                    <div id="rpga_demo_setup" class="menu_button">Тестовые данные</div>
-                    <div id="rpga_one_turn" class="menu_button">Один ход</div>
-                    <div id="rpga_reset_scene" class="menu_button">Сбросить сцену</div>
+                <h4>Старт игры</h4>
+                <small id="rpga_no_chat">Откройте чат: игра хранится в нём.</small>
+                <div id="rpga_start_block" class="rpga-section">
+                    <b>1. Мир</b>
+                    <label for="rpga_world_prompt">Промпт мира</label>
+                    <textarea id="rpga_world_prompt" class="text_pole" rows="2" placeholder="фэнтези, драконы, волны чудовищ"></textarea>
+                    <div class="rpga-buttons">
+                        <div id="rpga_world_expand" class="menu_button">Расширить</div>
+                    </div>
+                    <div id="rpga_world_form" class="rpga-section">
+                        <label>Сеттинг</label>
+                        <textarea class="text_pole" rows="2" data-world="setting"></textarea>
+                        <label>Правила мира (по одному в строке, 3–5)</label>
+                        <textarea class="text_pole" rows="4" data-world="rules"></textarea>
+                        <label>Эпоха</label>
+                        <input class="text_pole" type="text" data-world="era">
+                        <label>Тон</label>
+                        <input class="text_pole" type="text" data-world="tone">
+                        <label>Уровень силы</label>
+                        <input class="text_pole" type="text" data-world="powerLevel">
+                    </div>
+
+                    <b>2. Герои</b>
+                    <small>Отметьте ровно две карточки. Первая отмеченная станет героем 1.</small>
+                    <small id="rpga_pick_count"></small>
+                    <input id="rpga_card_filter" class="text_pole" type="search" placeholder="Поиск карточки">
+                    <div id="rpga_card_list" class="rpga-card-list"></div>
+                    <div class="rpga-buttons">
+                        <div id="rpga_heroes_generate" class="menu_button">Сгенерировать</div>
+                        <div id="rpga_heroes_manual" class="menu_button">Заполнить вручную</div>
+                    </div>
+                    <div id="rpga_hero_forms" class="rpga-section"></div>
+
+                    <b>3. Завязка сцены</b>
+                    <textarea id="rpga_premise" class="text_pole" rows="3" placeholder="Пусто — мастер придумает завязку сам"></textarea>
+
+                    <div class="rpga-buttons">
+                        <div id="rpga_start" class="menu_button">Старт</div>
+                        <div id="rpga_one_turn" class="menu_button">Один ход</div>
+                        <div id="rpga_reset_scene" class="menu_button">Сбросить сцену</div>
+                    </div>
+                    <small id="rpga_start_hint" class="rpga-hint"></small>
                 </div>
                 <div id="rpga_game_output" class="rpga-output"></div>
             </div>
