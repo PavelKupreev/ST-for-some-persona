@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     memoryThreshold: 30, // несжатых ходов, после которых старые уходят в скрытую память (FR-26); 0 — без сжатия
     stopAtSceneEnd: true,
     turnDelaySec: 3,
+    historianStyle: 'chronicle', // стиль письма Историка: chronicle / saga / novel (новое, PLAN 7.4, src/chronicle.js)
     logPrompts: false,
 });
 

@@ -14,6 +14,8 @@ import { HERO_IDS } from './prompts.js';
 import { startProblems } from './setup.js';
 import { refreshButtons, resetScene } from './startPanel.js';
 import { renderIntervention } from './intervention.js';
+import { unchronicledWarning } from './chronicle.js';
+import { renderChronicle } from './historian.js';
 
 /**
  * Цикл, который крутится в этой вкладке. Живёт только в памяти: после перезагрузки ST
@@ -53,7 +55,7 @@ async function startSession() {
     if (ownsChat()) return;
     const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
     if (problems.length) throw new Error(`Нельзя начать: ${problems.join('; ')}`);
-    if (state.turns.length && !confirm('В этом чате уже есть сцена. Начать новую? История сцены очистится, сообщения в чате останутся.\n\nЧтобы продолжить текущую, нажмите «Отмена», затем «Продолжить».')) return;
+    if (state.turns.length && !confirm(`В этом чате уже есть сцена. Начать новую? История сцены очистится, сообщения в чате останутся.\n\nЧтобы продолжить текущую, нажмите «Отмена», затем «Продолжить».${unchronicledWarning(state)}`)) return;
 
     resetScene(state);
     state.session.turnsLeft = getSettings().maxTurns;
@@ -182,6 +184,7 @@ function sessionOutput(text) {
 function renderAll() {
     renderSession();
     refreshButtons();
+    renderChronicle();
 }
 
 /** Перерисовывает счётчик, статус, кнопки сессии и краткие листы героев. */

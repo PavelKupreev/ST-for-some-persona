@@ -16,6 +16,8 @@ import {
 } from './setup.js';
 import { playOneTurn, toPromptCard } from './game.js';
 import { renderSession } from './autosession.js';
+import { unchronicledWarning } from './chronicle.js';
+import { renderChronicle } from './historian.js';
 
 const SETUP_MAX_TOKENS = 1500;
 const SAVE_DELAY_MS = 600;
@@ -341,7 +343,7 @@ export function refreshButtons() {
     const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
     const running = state.session.status === 'running';
     $('#rpga_session_start').toggleClass('rpga-off', problems.length > 0 || running);
-    $('#rpga_start_hint').text(problems.length ? `Чтобы начать: ${problems.join('; ')}.` : '');
+    $('#rpga_start_hint').text(problems.length ? `Чтобы начать: ${problems.join('; ')}. Мир и героев готовят на «📖 Странице игры», вкладка «Игра».` : '');
     // «Один ход» (концепция А) работает и без автосессии: первое нажатие открывает сцену.
     $('#rpga_one_turn').toggleClass('rpga-off', running || (!state.turns.length && problems.length > 0));
     $('#rpga_reset_scene').toggleClass('rpga-off', running || !state.turns.length);
@@ -352,6 +354,9 @@ export function refreshButtons() {
  * Неотправленная записка мастеру остаётся: её часто пишут до старта, на первый ход (FR-19).
  */
 export function resetScene(state) {
+    // Сыгранная сцена уходит в прошлое: следующая получит новый номер, летопись начнёт её с первого хода.
+    if (state.turns.length) state.scene.number = (state.scene.number ?? 1) + 1;
+    state.scene.chronicledUpTo = 0;
     state.turns = [];
     state.memory = null;
     Object.assign(state.session, { status: 'idle', reason: '', turnsLeft: 0, next: 'master', pendingOutcome: false });
@@ -363,11 +368,12 @@ export function resetScene(state) {
 
 export async function resetSceneClick() {
     const state = requireState();
-    if (!confirm('Очистить историю сцены? Мир и герои останутся, сообщения в чате тоже.')) return;
+    if (!confirm(`Очистить историю сцены? Мир и герои останутся, сообщения в чате и летопись тоже.${unchronicledWarning(state)}`)) return;
     resetScene(state);
     await saveState();
     refreshButtons();
     renderSession();
+    renderChronicle();
     gameOutput(`История сцены очищена.\n${describeGame()}`);
 }
 
@@ -388,6 +394,7 @@ export async function oneTurn() {
     } finally {
         refreshButtons();
         renderSession();
+        renderChronicle();
     }
 }
 

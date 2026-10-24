@@ -268,7 +268,7 @@ function lastThoughts(state, heroIndex) {
     return '';
 }
 
-function formatWorld(world) {
+export function formatWorld(world) {
     if (!world) return '—';
     return [
         `Сеттинг: ${world.setting || '—'}`,
@@ -280,7 +280,7 @@ function formatWorld(world) {
     ].join('\n');
 }
 
-function formatCard(card, name, otherName) {
+export function formatCard(card, name, otherName) {
     if (!card) return '(карточка не найдена)';
     const parts = [
         card.description && `Описание: ${card.description}`,

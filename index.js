@@ -4,6 +4,7 @@
 // Этап 3: старт игры — мир, две карточки, листы героев, завязка, язык игры (src/startPanel.js).
 // Этап 4: автосессия — цикл ходов, лимит, конец сцены, пауза на ошибке, главная панель (src/autosession.js).
 // Этап 5: вмешательство — тайная микроцель герою и записка мастеру (src/intervention.js).
+// Этап 7: полноэкранная страница с вкладками (src/page.js), Историк и летопись (src/historian.js).
 
 import { EXTENSION_ROOT, LOG_PREFIX } from './src/constants.js';
 import { getSettings, updateSettings } from './src/settings.js';
@@ -13,6 +14,8 @@ import { postAsCharacter, postAsMaster } from './src/chat.js';
 import { bindStartPanel, describeGame, gameOutput, renderStartPanel } from './src/startPanel.js';
 import { bindSession, renderSession } from './src/autosession.js';
 import { bindIntervention } from './src/intervention.js';
+import { bindPage, renderPage } from './src/page.js';
+import { bindChronicle, renderChronicle } from './src/historian.js';
 
 const PING_MESSAGES = [
     { role: 'system', content: 'Ты помогаешь проверить подключение. Отвечай одной короткой фразой на русском.' },
@@ -43,6 +46,9 @@ function bindSettings() {
     });
     $('#rpga_language').val(settings.language).on('input', function () {
         updateSettings({ language: String($(this).val()).trim() || 'русский' });
+    });
+    $('#rpga_historian_style').val(settings.historianStyle).on('change', function () {
+        updateSettings({ historianStyle: String($(this).val()) });
     });
     $('#rpga_log_prompts').prop('checked', settings.logPrompts).on('change', function () {
         updateSettings({ logPrompts: $(this).prop('checked') });
@@ -120,6 +126,7 @@ function showStateOnChatChange() {
     renderSession();
     renderStartPanel();
     gameOutput(describeGame());
+    renderChronicle();
 }
 
 // 1.4: одно сообщение от мастера и одно от героя.
@@ -160,6 +167,8 @@ function bindButton(selector, handler, show = output) {
 jQuery(async () => {
     try {
         await renderPanel();
+        await renderPage();
+        bindPage({ game: renderStartPanel, chronicle: renderChronicle });
         bindSettings();
         bindButton('#rpga_test_models', testModels);
         bindButton('#rpga_test_state', testState);
@@ -172,7 +181,10 @@ jQuery(async () => {
             renderStartPanel();
         });
 
+        bindChronicle((selector, handler) => bindButton(selector, handler, (text) => $('#rpga_chronicle_status').text(text)));
+
         renderSession();
+        renderChronicle();
 
         const { eventSource, eventTypes } = SillyTavern.getContext();
         eventSource.on(eventTypes.CHAT_CHANGED, showStateOnChatChange);

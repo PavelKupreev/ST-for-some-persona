@@ -6,65 +6,10 @@
         </div>
         <div class="inline-drawer-content">
             <div class="rpga-section">
-                <h4>Настройки</h4>
-                <label for="rpga_transport">Способ вызова</label>
-                <select id="rpga_transport" class="text_pole">
-                    <option value="direct">Напрямую в OpenRouter (ключ ниже, основной)</option>
-                    <option value="backend">Через сервер ST (ключ из «Подключений API», запасной)</option>
-                </select>
-
-                <div id="rpga_key_block">
-                    <label for="rpga_openrouter_key">Ключ OpenRouter</label>
-                    <input id="rpga_openrouter_key" class="text_pole" type="password" autocomplete="off" placeholder="sk-or-...">
-                    <small>Хранится в настройках ST, в чат и его метаданные не попадает.</small>
+                <div class="rpga-buttons">
+                    <div id="rpga_open_page" class="menu_button" title="Мир, герои, летопись и настройки">📖 Страница игры</div>
                 </div>
-
-                <label for="rpga_master_model">Модель мастера (A)</label>
-                <input id="rpga_master_model" class="text_pole" type="text" placeholder="openai/gpt-4o">
-
-                <label for="rpga_hero_model">Модель героев (B)</label>
-                <input id="rpga_hero_model" class="text_pole" type="text" placeholder="openai/gpt-4o-mini">
-
-                <label for="rpga_language">Язык игры</label>
-                <input id="rpga_language" class="text_pole" type="text" list="rpga_language_list" placeholder="русский">
-                <datalist id="rpga_language_list">
-                    <option value="русский"></option>
-                    <option value="English"></option>
-                    <option value="українська"></option>
-                </datalist>
-                <small>На нём пишут мастер и герои, даже если карточки на другом языке.</small>
-
-                <b>Параметры автосессии</b>
-                <div class="rpga-settings-grid">
-                    <label for="rpga_max_turns">Лимит ходов N
-                        <input id="rpga_max_turns" class="text_pole" type="number" min="1" max="500" step="1">
-                    </label>
-                    <label for="rpga_turn_delay">Задержка между ходами, с
-                        <input id="rpga_turn_delay" class="text_pole" type="number" min="0" max="60" step="0.5">
-                    </label>
-                    <label for="rpga_randomness">Случайность выбора, %
-                        <input id="rpga_randomness" class="text_pole" type="number" min="0" max="100" step="5">
-                    </label>
-                    <label for="rpga_check_frequency">Частота проверок, %
-                        <input id="rpga_check_frequency" class="text_pole" type="number" min="0" max="100" step="5">
-                    </label>
-                    <label for="rpga_silence">Порог молчания, ходов
-                        <input id="rpga_silence" class="text_pole" type="number" min="0" max="50" step="1">
-                    </label>
-                    <label for="rpga_memory_threshold">Сжатие памяти после, ходов
-                        <input id="rpga_memory_threshold" class="text_pole" type="number" min="0" max="200" step="5">
-                    </label>
-                </div>
-                <small>Ход — реплика одного участника: мастера или героя. Случайность заменяет выбор мастера случайным. Частота проверок — доля действий героев, которые мастер проверяет броском d20: 0 — без кубиков, 100 — каждое действие. Герой, молчащий столько ходов, ходит обязательно (0 — выключено). Когда несжатых ходов больше порога сжатия, все, кроме последних 10, мастер-модель пересказывает в скрытую память (0 — не сжимать).</small>
-                <label class="checkbox_label" for="rpga_stop_scene_end">
-                    <input id="rpga_stop_scene_end" type="checkbox">
-                    <span>Стоп в конце сцены</span>
-                </label>
-
-                <label class="checkbox_label" for="rpga_log_prompts">
-                    <input id="rpga_log_prompts" type="checkbox">
-                    <span>Лог промптов в консоль браузера (F12)</span>
-                </label>
+                <small>Мир, герои, летопись и настройки — на странице игры.</small>
             </div>
 
             <div id="rpga_session" class="rpga-section">
@@ -81,6 +26,9 @@
                     <div id="rpga_session_stop" class="menu_button" title="Сессия завершится до нового «Старта»">⏹ Стоп</div>
                 </div>
                 <small id="rpga_start_hint" class="rpga-hint"></small>
+                <div class="rpga-buttons">
+                    <div id="rpga_chronicle_write" class="menu_button rpga-chronicle-write" title="Историк напишет главу по ходам с прошлой главы">📜 Летопись</div>
+                </div>
                 <div id="rpga_hero_cards" class="rpga-hero-cards"></div>
                 <div id="rpga_intervene" class="rpga-section">
                     <b>Вмешательство</b>
@@ -101,62 +49,6 @@
                     <small id="rpga_note_status" class="rpga-hint"></small>
                 </div>
                 <div id="rpga_session_output" class="rpga-output"></div>
-            </div>
-
-            <div class="rpga-section">
-                <h4>Старт игры</h4>
-                <small id="rpga_no_chat">Откройте чат: игра хранится в нём.</small>
-                <div id="rpga_start_block" class="rpga-section">
-                    <b>1. Мир</b>
-                    <label for="rpga_world_prompt">Промпт мира</label>
-                    <textarea id="rpga_world_prompt" class="text_pole" rows="2" placeholder="фэнтези, драконы, волны чудовищ"></textarea>
-                    <div class="rpga-buttons">
-                        <div id="rpga_world_expand" class="menu_button">Расширить</div>
-                    </div>
-                    <div id="rpga_world_form" class="rpga-section">
-                        <label>Сеттинг</label>
-                        <textarea class="text_pole" rows="2" data-world="setting"></textarea>
-                        <label>Правила мира (по одному в строке, 3–5)</label>
-                        <textarea class="text_pole" rows="4" data-world="rules"></textarea>
-                        <label>Эпоха</label>
-                        <input class="text_pole" type="text" data-world="era">
-                        <label>Тон</label>
-                        <input class="text_pole" type="text" data-world="tone">
-                        <label>Уровень силы</label>
-                        <input class="text_pole" type="text" data-world="powerLevel">
-                    </div>
-
-                    <b>2. Герои</b>
-                    <small>Отметьте ровно две карточки. Первая отмеченная станет героем 1.</small>
-                    <small id="rpga_pick_count"></small>
-                    <input id="rpga_card_filter" class="text_pole" type="search" placeholder="Поиск карточки">
-                    <div id="rpga_card_list" class="rpga-card-list"></div>
-                    <div class="rpga-buttons">
-                        <div id="rpga_heroes_generate" class="menu_button">Сгенерировать</div>
-                        <div id="rpga_heroes_manual" class="menu_button">Заполнить вручную</div>
-                    </div>
-                    <div id="rpga_hero_forms" class="rpga-section"></div>
-
-                    <b>3. Завязка сцены</b>
-                    <textarea id="rpga_premise" class="text_pole" rows="3" placeholder="Пусто — мастер придумает завязку сам"></textarea>
-
-                    <small>Сцену запускает «Старт» в блоке «Автосессия» выше. Вручную, по одному ходу:</small>
-                    <div class="rpga-buttons">
-                        <div id="rpga_one_turn" class="menu_button">Один ход</div>
-                        <div id="rpga_reset_scene" class="menu_button">Сбросить сцену</div>
-                    </div>
-                </div>
-                <div id="rpga_game_output" class="rpga-output"></div>
-            </div>
-
-            <div class="rpga-section">
-                <h4>Проверки этапа 1</h4>
-                <div class="rpga-buttons">
-                    <div id="rpga_test_models" class="menu_button">1.2 Тест моделей A и B</div>
-                    <div id="rpga_test_state" class="menu_button">1.3 Счётчик в чате +1</div>
-                    <div id="rpga_test_messages" class="menu_button">1.4 Тест сообщений</div>
-                </div>
-                <div id="rpga_test_output" class="rpga-output"></div>
             </div>
         </div>
     </div>

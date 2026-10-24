@@ -250,3 +250,139 @@
     opacity: 0.8;
     font-style: italic;
 }
+
+/* Полноэкранная страница (этап 7, FR-27) */
+.rpga-page {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    background-color: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(var(--SmartThemeBlurStrength, 8px));
+    color: var(--SmartThemeBodyColor, #ddd);
+}
+
+.rpga-page[hidden] {
+    display: none;
+}
+
+.rpga-page .rpga-page-inner {
+    display: flex;
+    flex-direction: column;
+    max-width: 1000px;
+    height: 100%;
+    margin: 0 auto;
+    background-color: var(--SmartThemeBlurTintColor, #1e1e1e);
+    border-left: 1px solid var(--SmartThemeBorderColor, #444);
+    border-right: 1px solid var(--SmartThemeBorderColor, #444);
+}
+
+.rpga-page .rpga-page-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, #444);
+}
+
+.rpga-page .rpga-page-title {
+    white-space: nowrap;
+}
+
+.rpga-page .rpga-tabs {
+    display: flex;
+    flex: 1;
+    gap: 4px;
+    overflow-x: auto;
+}
+
+.rpga-page .rpga-tab {
+    white-space: nowrap;
+}
+
+.rpga-page .rpga-tab.rpga-tab-active {
+    outline: 1px solid var(--SmartThemeQuoteColor, #e18a24);
+}
+
+.rpga-page .rpga-page-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px 24px;
+}
+
+.rpga-page .rpga-pane[hidden] {
+    display: none;
+}
+
+.rpga-page .rpga-output {
+    max-height: none;
+}
+
+.rpga-page .rpga-card-list {
+    max-height: 320px;
+}
+
+@media (max-width: 600px) {
+    .rpga-page .rpga-page-title {
+        display: none;
+    }
+
+    .rpga-page .rpga-page-body {
+        padding: 10px 10px 24px;
+    }
+}
+
+/* Летопись (этап 7, FR-23–FR-25) */
+.rpga-page .rpga-chronicle-toc ol {
+    margin: 4px 0 12px;
+    padding-left: 1.6em;
+}
+
+.rpga-page .rpga-chronicle-toc a {
+    color: var(--SmartThemeQuoteColor, #e18a24);
+    cursor: pointer;
+}
+
+.rpga-page .rpga-chapter,
+.rpga-page .rpga-chronicle-preview {
+    max-width: 70ch;
+    margin: 0 auto 28px;
+}
+
+.rpga-page .rpga-chronicle-preview {
+    padding: 10px 14px;
+    border: 1px dashed var(--SmartThemeQuoteColor, #e18a24);
+    border-radius: 8px;
+}
+
+.rpga-page .rpga-chronicle-preview[hidden] {
+    display: none;
+}
+
+.rpga-page .rpga-chronicle-preview-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px;
+    opacity: 0.85;
+}
+
+.rpga-page .rpga-chapter-title {
+    margin: 10px 0 2px;
+}
+
+.rpga-page .rpga-chapter-meta {
+    display: block;
+    opacity: 0.6;
+    margin-bottom: 8px;
+}
+
+.rpga-page .rpga-chapter-text {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.08em;
+    line-height: 1.65;
+}
+
+.rpga-page .rpga-chapter-text p {
+    margin: 0 0 0.9em;
+    text-indent: 1.5em;
+}

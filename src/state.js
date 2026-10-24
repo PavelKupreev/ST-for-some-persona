@@ -17,10 +17,12 @@ export function createEmptyState() {
         },
         scene: {
             premise: '',
+            number: 1, // номер сцены: «Старт» новой сцены поверх сыгранной даёт следующий (летопись, этап 7)
+            chronicledUpTo: 0, // последний ход этой сцены, уже описанный в летописи (FR-23)
         },
         turns: [],
         memory: null,
-        chronicle: [],
+        chronicle: [], // главы летописи, только дополняются (FR-24), см. src/chronicle.js
         session: {
             status: 'idle', // idle / running / paused / stopped
             reason: '', // почему сессия на паузе или остановлена (UC-05, FR-22)
