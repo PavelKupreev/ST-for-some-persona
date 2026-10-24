@@ -16,6 +16,7 @@ import { bindSession, renderSession } from './src/autosession.js';
 import { bindIntervention } from './src/intervention.js';
 import { bindPage, renderPage } from './src/page.js';
 import { bindChronicle, renderChronicle } from './src/historian.js';
+import { clearPromptLog, promptLogSize, promptLogText } from './src/logger.js';
 
 const PING_MESSAGES = [
     { role: 'system', content: 'Ты помогаешь проверить подключение. Отвечай одной короткой фразой на русском.' },
@@ -50,6 +51,9 @@ function bindSettings() {
     $('#rpga_historian_style').val(settings.historianStyle).on('change', function () {
         updateSettings({ historianStyle: String($(this).val()) });
     });
+    $('#rpga_death_mode').val(settings.deathMode).on('change', function () {
+        updateSettings({ deathMode: String($(this).val()) });
+    });
     $('#rpga_log_prompts').prop('checked', settings.logPrompts).on('change', function () {
         updateSettings({ logPrompts: $(this).prop('checked') });
     });
@@ -78,6 +82,26 @@ function bindNumber(selector, key, min, max, { integer = true } = {}) {
     }).on('change', function () {
         $(this).val(getSettings()[key]);
     });
+}
+
+// «💾 Лог промптов» (новое, PLAN 8.3): все запросы и ответы этой вкладки одним .txt.
+function downloadPromptLog() {
+    if (!promptLogSize()) throw new Error('Лог пуст: запросов к моделям в этой вкладке ещё не было');
+    const blob = new Blob([promptLogText()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `rpg-prompts-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $('#rpga_prompt_log_status').text(`Скачано запросов: ${promptLogSize()}`);
+}
+
+function clearLog() {
+    clearPromptLog();
+    $('#rpga_prompt_log_status').text('Лог очищен');
 }
 
 function toggleKeyBlock() {
@@ -173,6 +197,9 @@ jQuery(async () => {
         bindButton('#rpga_test_models', testModels);
         bindButton('#rpga_test_state', testState);
         bindButton('#rpga_test_messages', testMessages);
+        const logStatus = (text) => $('#rpga_prompt_log_status').text(text);
+        bindButton('#rpga_prompt_log_download', downloadPromptLog, logStatus);
+        bindButton('#rpga_prompt_log_clear', clearLog, logStatus);
         bindStartPanel((selector, handler) => bindButton(selector, handler, gameOutput));
         const sessionOutput = (text) => $('#rpga_session_output').text(text);
         bindSession((selector, handler) => bindButton(selector, handler, sessionOutput));

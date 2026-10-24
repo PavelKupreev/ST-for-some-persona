@@ -4,10 +4,13 @@
 //
 // Формат: [STATE {"hero1": {"hp": -5, "stats": {"DEX": -1}, "add": ["ключ"], "remove": ["факел"], "use": ["Огненный шар"]}}]
 // hp и stats — изменения (дельты), а не новые значения. use — применённые без броска способности (PLAN 6.4).
-// Вместо hero1/hero2 можно имя героя.
+// Вместо hero1/hero2 можно имя героя. Ключ "time" рядом с героями — сколько игровых часов прошло (PLAN 8.5).
 
 import { STATS, normalizeStat } from './dice.js';
 import { findAbility, useAbility } from './abilities.js';
+import { parseHours } from './vitality.js';
+
+const TIME_KEYS = ['time', 'время', 'hours', 'часы', 'прошло', 'elapsed'];
 
 const STAT_MIN = 1;
 const STAT_MAX = 20;
@@ -21,13 +24,15 @@ const FENCED_JSON = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/gi;
  * Достаёт блоки изменений из ответа мастера.
  * @param {string} text ответ мастера
  * @param {string[]} heroNames имена героя 1 и героя 2
- * @returns {{text: string, changes: Array<{hero: 'hero1'|'hero2', hp: number, stats: Record<string, number>, add: string[], remove: string[], use: string[]}>}}
- *   text — ответ без блоков; блок, который не удалось разобрать, тоже вырезается, чтобы JSON не попал в чат
+ * @returns {{text: string, changes: Array<{hero: 'hero1'|'hero2', hp: number, stats: Record<string, number>, add: string[], remove: string[], use: string[]}>, hours: number}}
+ *   text — ответ без блоков; блок, который не удалось разобрать, тоже вырезается, чтобы JSON не попал в чат;
+ *   hours — сколько игровых часов прошло по ключу «time»
  */
 export function extractStateChanges(text, heroNames = []) {
     let source = String(text ?? '');
     const changes = [];
     const cuts = [];
+    let hours = 0;
 
     for (const match of source.matchAll(STATE_START)) {
         const jsonStart = match.index + match[0].length;
@@ -42,18 +47,30 @@ export function extractStateChanges(text, heroNames = []) {
         // Блок на отдельной строке убираем вместе с переводом строки.
         if (source[end] === '\n' && (match.index === 0 || source[match.index - 1] === '\n')) end++;
         cuts.push([match.index, end]);
-        changes.push(...normalizeChanges(parseJson(source.slice(jsonStart, jsonEnd + 1)), heroNames));
+        const json = parseJson(source.slice(jsonStart, jsonEnd + 1));
+        changes.push(...normalizeChanges(json, heroNames));
+        hours += timeOf(json);
     }
     for (const [start, end] of cuts.reverse()) source = source.slice(0, start) + source.slice(end);
 
     source = source.replace(FENCED_JSON, (whole, body) => {
-        const found = normalizeChanges(parseJson(body), heroNames);
-        if (!found.length) return whole;
+        const json = parseJson(body);
+        const found = normalizeChanges(json, heroNames);
+        if (!found.length && !timeOf(json)) return whole;
         changes.push(...found);
+        hours += timeOf(json);
         return '';
     });
 
-    return { text: source.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(), changes: mergeChanges(changes) };
+    return { text: source.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(), changes: mergeChanges(changes), hours };
+}
+
+// Игровое время блока: {"time": 8} или в обёртке {"changes": {..., "time": 8}}.
+function timeOf(json) {
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return 0;
+    const key = Object.keys(json).find((name) => TIME_KEYS.includes(name.toLowerCase()));
+    const inner = json.changes ?? json.heroes ?? json.изменения;
+    return (key ? parseHours(json[key]) : 0) + (inner && typeof inner === 'object' ? timeOf(inner) : 0);
 }
 
 /**
@@ -69,7 +86,8 @@ export function applyStateChanges(heroes, changes, { skipUses = [] } = {}) {
     const lines = [];
     for (const change of changes) {
         const hero = heroes[change.hero === 'hero2' ? 1 : 0];
-        if (!hero) continue;
+        // Погибшего героя не лечат и не меняют (PLAN 8.5).
+        if (!hero || hero.condition === 'dead') continue;
         const parts = [];
         const abilityLines = [];
 
@@ -77,7 +95,7 @@ export function applyStateChanges(heroes, changes, { skipUses = [] } = {}) {
             const before = hero.hp.current;
             hero.hp.current = Math.max(0, Math.min(hero.hp.max, before + change.hp));
             if (hero.hp.current !== before) {
-                parts.push(`HP ${before} → ${hero.hp.current} (${signed(hero.hp.current - before)})${hero.hp.current === 0 ? ', без сознания' : ''}`);
+                parts.push(`HP ${before} → ${hero.hp.current} (${signed(hero.hp.current - before)})`);
             }
         }
 

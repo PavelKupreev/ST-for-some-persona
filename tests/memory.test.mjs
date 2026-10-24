@@ -1,7 +1,7 @@
 // Скрытая память (PLAN 6.2, FR-26) и изоляция мыслей (NFR-01).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MEMORY_KEEP, applySummaries, buildSummaryPrompts, turnsToCompress } from '../src/memory.js';
+import { MEMORY_KEEP, applySummaries, keepAfterCompress, buildSummaryPrompts, turnsToCompress } from '../src/memory.js';
 import { buildHeroPrompt, buildMasterPrompt } from '../src/prompts.js';
 
 function makeState(count) {
@@ -81,4 +81,12 @@ test('повторное сжатие учитывает прежнюю памя
     assert.equal(turns[0].n, 22);
     const prompt = text(buildSummaryPrompts({ state, turns, language: 'русский' })[0].messages);
     assert.match(prompt, /ПЕРВАЯ/);
+});
+
+test('малый порог: остаётся половина порога, сжатие не на каждом ходе (PLAN 8.4)', () => {
+    assert.equal(keepAfterCompress(30), MEMORY_KEEP);
+    assert.equal(keepAfterCompress(10), 5);
+    assert.equal(keepAfterCompress(1), 1);
+    const state = makeState(11);
+    assert.equal(turnsToCompress(state, 10).length, 6);
 });

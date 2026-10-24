@@ -16,6 +16,7 @@ import { refreshButtons, resetScene } from './startPanel.js';
 import { renderIntervention } from './intervention.js';
 import { unchronicledWarning } from './chronicle.js';
 import { renderChronicle } from './historian.js';
+import { conditionText, heroCondition } from './vitality.js';
 
 /**
  * Цикл, который крутится в этой вкладке. Живёт только в памяти: после перезагрузки ST
@@ -126,7 +127,14 @@ async function runLoop(state) {
                 return;
             }
 
-            state.session.turnsLeft = Math.max(0, state.session.turnsLeft - 1);
+            if (step.author !== 'none') state.session.turnsLeft = Math.max(0, state.session.turnsLeft - 1);
+            if (step.allDead) {
+                await saveState();
+                sessionOutput(step.report);
+                await halt(state, 'stopped', 'все герои погибли');
+                return;
+            }
+
             await saveState();
             sessionOutput(step.report);
             renderAll();
@@ -225,10 +233,13 @@ function renderHeroCards(state) {
     for (const hero of state.heroes) {
         const { current, max } = hero.hp;
         const percent = max > 0 ? Math.max(0, Math.min(100, Math.round((current / max) * 100))) : 0;
-        const card = $('<div class="rpga-hero-mini">').toggleClass('rpga-down', current <= 0);
+        const condition = heroCondition(hero);
+        const card = $('<div class="rpga-hero-mini">').toggleClass('rpga-down', current <= 0 || condition !== 'ok');
+        const mark = { down: '💤 ', dead: '💀 ' }[condition] ?? '';
         card.append($('<div class="rpga-hero-mini-head">')
-            .append($('<b>').text(hero.name))
+            .append($('<b>').text(`${mark}${hero.name}`).attr('title', conditionText(hero, state.clock?.hours ?? 0)))
             .append($('<span class="rpga-hp-text">').text(`HP ${current}/${max}`)));
+        if (condition !== 'ok') card.append($('<small class="rpga-condition-line">').text(conditionText(hero, state.clock?.hours ?? 0)));
         card.append($('<div class="rpga-hp-bar">').append($('<div class="rpga-hp-fill">').css('width', `${percent}%`)));
         card.append($('<small class="rpga-stat-line">').text(STATS.map((stat) => `${stat} ${hero.stats[stat]} (${formatMod(hero.stats[stat])})`).join(' · ')));
         // Навыки 5e (PLAN 6.3) отключены по просьбе пользователя:

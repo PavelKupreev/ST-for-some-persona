@@ -18,6 +18,7 @@ import { playOneTurn, toPromptCard } from './game.js';
 import { renderSession } from './autosession.js';
 import { unchronicledWarning } from './chronicle.js';
 import { renderChronicle } from './historian.js';
+import { resetVitality } from './vitality.js';
 
 const SETUP_MAX_TOKENS = 1500;
 const SAVE_DELAY_MS = 600;
@@ -364,6 +365,8 @@ export function resetScene(state) {
         hero.silence = 0;
         hero.hp.current = hero.hp.max;
     }
+    // Новая сцена: павшие и отключённые снова в строю, игровые часы с нуля (PLAN 8.5).
+    resetVitality(state);
 }
 
 export async function resetSceneClick() {

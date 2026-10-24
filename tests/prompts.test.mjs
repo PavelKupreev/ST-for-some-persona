@@ -99,3 +99,29 @@ test('частота проверок: обязательный бросок, з
     assert.match(free, /Если исход действия героя неочевиден/);
     assert.match(free, /не пиши за них/);
 });
+
+test('приёмка (PLAN 8.2, 8.5): мастер не решает за героев, видит состояние героев, время и правило HP 0', () => {
+    const state = makeState();
+    state.heroes[0].condition = 'down';
+    state.heroes[0].downUntil = 30;
+    state.clock = { hours: 10 };
+    const knockout = text(buildMasterPrompt({ state, cards, language: 'русский' }));
+    assert.match(knockout, /пишут только они сами/);
+    assert.match(knockout, /Состояние: без сознания, не действует ещё 20 ч/);
+    assert.match(knockout, /Игровое время: день 1, 10 ч/);
+    assert.match(knockout, /теряет сознание минимум на 24 ч/);
+    assert.match(text(buildMasterPrompt({ state, cards, language: 'русский', deathMode: 'death' })), /погибает навсегда/);
+
+    const required = text(buildMasterPrompt({ state, cards, language: 'русский', check: { mode: 'required', hero: 'hero2', reminder: true } }));
+    assert.match(required, /не поставил обязательную метку/);
+    assert.match(required, /До броска не описывай/);
+
+    state.turns.push({ n: 5, author: 'master', text: 'Тишина.', rolls: [] });
+    assert.match(text(buildMasterPrompt({ state, cards, language: 'русский' })), /Прошлый ход тоже был твоим/);
+});
+
+test('герой без сознания: мастеру напоминают про "time"', () => {
+    const state = makeState();
+    Object.assign(state.heroes[1], { condition: 'down', downUntil: 24 });
+    assert.match(text(buildMasterPrompt({ state, cards, language: 'русский' })), /Без сознания: Лиа \(ещё 24 ч\)\. Если в этом ходе проходит игровое время, обязательно/);
+});

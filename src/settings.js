@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     stopAtSceneEnd: true,
     turnDelaySec: 3,
     historianStyle: 'chronicle', // стиль письма Историка: chronicle / saga / novel (новое, PLAN 7.4, src/chronicle.js)
+    deathMode: 'knockout', // при HP 0: knockout — без смерти, отключка ≥ суток игрового времени; death — гибель (PLAN 8.5, src/vitality.js)
     logPrompts: false,
 });
 

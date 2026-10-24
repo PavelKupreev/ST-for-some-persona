@@ -69,3 +69,18 @@ test('сценарий: мастер всё время зовёт героя 1 �
     }
     assert.ok(authors.includes('hero2'));
 });
+
+test('герой без сознания или погиб: не выбирается ни мастером, ни случаем, ни защитой от молчания (PLAN 8.5)', () => {
+    const down = { ...base, active: [false, true] };
+    assert.deepEqual(chooseNext(down), { next: 'hero2', reason: 'unavailable' });
+    assert.deepEqual(chooseNext({ ...down, silence: [9, 0] }), { next: 'hero2', reason: 'unavailable' });
+    for (let i = 0; i < 200; i++) assert.notEqual(chooseNext({ ...down, randomness: 100 }).next, 'hero1');
+    assert.deepEqual(chooseNext({ ...base, active: [false, false] }), { next: 'master', reason: 'unavailable' });
+    assert.deepEqual(chooseNext({ ...base, masterChoice: 'hero2', active: [false, true] }), { next: 'hero2', reason: 'master' });
+});
+
+test('герой не в строю не копит молчание', () => {
+    const heroes = [{ silence: 2, condition: 'down' }, { silence: 1 }];
+    updateSilence(heroes, 'master');
+    assert.deepEqual(heroes.map((hero) => hero.silence), [2, 2]);
+});

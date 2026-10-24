@@ -21,6 +21,7 @@ export function createEmptyState() {
             chronicledUpTo: 0, // последний ход этой сцены, уже описанный в летописи (FR-23)
         },
         turns: [],
+        clock: { hours: 0 }, // игровые часы с начала сцены, двигает мастер блоком STATE "time" (PLAN 8.5)
         memory: null,
         chronicle: [], // главы летописи, только дополняются (FR-24), см. src/chronicle.js
         session: {

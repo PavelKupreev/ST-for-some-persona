@@ -130,13 +130,14 @@ const SCENE_END_TAG = /\[\s*(?:КОНЕЦ[\s_-]*СЦЕНЫ|СЦЕНА[\s_-]*ЗА
  * @param {object} [options]
  * @param {string[]} [options.heroNames] имена героя 1 и героя 2, чтобы понять «[NEXT: Арен]»
  * @returns {{text: string, next: 'hero1'|'hero2'|'master'|null, rolls: ReturnType<typeof parseRollTags>, sceneEnd: boolean,
- *   changes: ReturnType<typeof extractStateChanges>['changes']}} changes — изменения HP, статов и инвентаря (FR-15)
+ *   changes: ReturnType<typeof extractStateChanges>['changes'], hours: number}} changes — изменения HP, статов и инвентаря (FR-15),
+ *   hours — прошедшие игровые часы (PLAN 8.5)
  */
 export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     const trimmed = String(raw ?? '').replace(/\r\n?/g, '\n').trim();
     if (!trimmed) throw new ParseError('Пустой ответ мастера', raw);
     // Блок изменений вырезаем первым: внутри JSON могут быть скобки и слова, похожие на метки.
-    const { text: source, changes } = extractStateChanges(trimmed, heroNames);
+    const { text: source, changes, hours } = extractStateChanges(trimmed, heroNames);
 
     let next = null;
     for (const match of [...source.matchAll(NEXT_TAG), ...source.matchAll(NEXT_LINE)]) {
@@ -148,11 +149,13 @@ export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     SCENE_END_TAG.lastIndex = 0;
     let text = stripRollTags(source.replace(NEXT_TAG, '').replace(NEXT_LINE, '').replace(SCENE_END_TAG, ''));
     text = text.replace(/^\s*\**(?:Мастер|Master|DM)\**\s*:\s*/i, '').trim();
+    // Плашки бросков рисует код: «🎲 Grokk, CON:», написанное самим мастером, вырезаем.
+    text = text.split('\n').filter((line) => !/^\s*🎲/.test(line)).join('\n').trim();
     // Мастер не говорит за героев: строки «Мира: ...» и «**Мира:** ...» вырезаем, у героев свои ходы.
     text = dropSpeakerLines(text, heroNames);
     if (!text) throw new ParseError('В ответе мастера нет текста, только служебные метки', raw);
 
-    return { text, next, rolls, sceneEnd, changes };
+    return { text, next, rolls, sceneEnd, changes, hours };
 }
 
 function dropSpeakerLines(text, names) {

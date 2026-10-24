@@ -8,8 +8,14 @@
 
 import { HERO_IDS, formatTurns, languageRule } from './prompts.js';
 
-// Сколько последних ходов остаётся в истории целиком после сжатия.
+// Сколько последних ходов остаётся в истории целиком после сжатия: не больше 10 и не больше половины порога,
+// иначе при пороге около 10 сжатие запускалось бы на каждом ходе (приёмка, PLAN 8.4).
 export const MEMORY_KEEP = 10;
+
+/** Сколько ходов оставить несжатыми при пороге threshold. */
+export function keepAfterCompress(threshold) {
+    return Math.max(1, Math.min(MEMORY_KEEP, Math.floor(threshold / 2)));
+}
 export const SUMMARY_MAX_WORDS = 250;
 
 export function emptyMemory() {
@@ -30,7 +36,7 @@ export function liveTurns(state) {
 }
 
 /**
- * Какие ходы пора сжать: когда несжатых больше порога, сжимаем всё, кроме последних MEMORY_KEEP.
+ * Какие ходы пора сжать: когда несжатых больше порога, сжимаем всё, кроме последних keepAfterCompress(threshold).
  * @param {object} state
  * @param {number} threshold порог из настроек; 0 — сжатие выключено
  * @returns {object[]} ходы для сжатия (пусто, если рано)
@@ -39,7 +45,7 @@ export function turnsToCompress(state, threshold) {
     if (!(threshold > 0)) return [];
     const live = liveTurns(state);
     if (live.length <= threshold) return [];
-    return live.slice(0, Math.max(0, live.length - MEMORY_KEEP));
+    return live.slice(0, Math.max(0, live.length - keepAfterCompress(threshold)));
 }
 
 /**

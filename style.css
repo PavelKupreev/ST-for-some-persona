@@ -386,3 +386,8 @@
     margin: 0 0 0.9em;
     text-indent: 1.5em;
 }
+
+.rpga-panel .rpga-condition-line {
+    display: block;
+    font-style: italic;
+}

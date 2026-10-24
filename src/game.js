@@ -16,6 +16,7 @@ import { consumeMasterNote } from './intervention.js';
 import { applyStateChanges } from './heroState.js';
 import { findAbility, useAbility } from './abilities.js';
 import { applySummaries, buildSummaryPrompts, turnsToCompress } from './memory.js';
+import { activeHeroes, applyVitality, heroCondition, hoursFromText, isActive } from './vitality.js';
 
 const MASTER_MAX_TOKENS = 700;
 const HERO_MAX_TOKENS = 500;
@@ -24,12 +25,18 @@ const SUMMARY_MAX_TOKENS = 600;
 /**
  * Один ход одного актора: мастера (с бросками и описанием исхода) или героя, на кого указывает state.session.next.
  * Если ход сорвался, очередь не сдвигается: следующий вызов повторит его (FR-22).
- * @returns {Promise<{author: string, report: string, sceneEnd: boolean}>}
+ * Все герои погибли (настройка «При HP 0» = смерть) — хода нет, allDead: автосессия останавливается.
+ * @returns {Promise<{author: string, report: string, sceneEnd: boolean, allDead?: boolean}>}
  */
 export async function playStep() {
     const state = requireGame();
     const chatId = SillyTavern.getContext().getCurrentChatId();
-    const heroIndex = HERO_IDS.indexOf(state.session.next);
+    if (state.heroes.every((hero) => heroCondition(hero) === 'dead')) {
+        return { author: 'none', report: '💀 Все герои погибли, игра окончена', sceneEnd: false, allDead: true };
+    }
+    let heroIndex = HERO_IDS.indexOf(state.session.next);
+    // Герой выбыл, пока ход ждал очереди (например, ранен в описании исхода): вместо него ходит мастер.
+    if (heroIndex !== -1 && !isActive(state.heroes[heroIndex])) heroIndex = -1;
 
     const step = heroIndex === -1
         ? await masterTurn(state, chatId)
@@ -43,6 +50,7 @@ export async function playStep() {
         silence: state.heroes.map((hero) => hero.silence),
         randomness: settings.randomness,
         silenceThreshold: settings.silenceThreshold,
+        active: activeHeroes(state),
     });
     state.session.next = choice.next;
     state.turns[state.turns.length - 1].next = choice.next;
@@ -54,7 +62,9 @@ export async function playStep() {
     const reason = { random: ' (случайный выбор)', silence: ' (давно молчал)' }[choice.reason] ?? '';
     const lines = [`${label}${step.detail ? `: ${step.detail}` : ''} → ${describeNext(state)}${reason}`];
     if (step.sceneEnd) lines.push('🏁 Мастер отметил конец сцены');
-    return { author: step.author, report: lines.join('\n'), sceneEnd: Boolean(step.sceneEnd) };
+    const allDead = state.heroes.every((hero) => heroCondition(hero) === 'dead');
+    if (allDead) lines.push('💀 Все герои погибли, игра окончена');
+    return { author: step.author, report: lines.join('\n'), sceneEnd: Boolean(step.sceneEnd), allDead };
 }
 
 /**
@@ -91,6 +101,7 @@ function logChoice(state, step, choice) {
         random: `случайность ${getSettings().randomness} %, мастер выбрал ${who(step.masterChoice)}`,
         'after-hero': 'после героя ходит мастер',
         master: 'выбор мастера',
+        unavailable: `мастер выбрал ${who(step.masterChoice)}, но он не может действовать`,
     }[choice.reason];
     console.log(`${LOG_PREFIX} следующий ход: ${who(choice.next)} — ${why}; молчание: ${state.heroes.map((hero) => `${hero.name} ${hero.silence}`).join(', ')}`);
 }
@@ -105,29 +116,45 @@ async function masterTurn(state, chatId) {
     if (!state.session.pendingOutcome) {
         const check = decideCheck(state, settings.checkFrequency);
         const note = state.session.masterNote;
-        const raw = await callModel({
-            role: 'master',
-            model: settings.masterModel,
-            messages: buildMasterPrompt({ state, cards, language: settings.language, check }),
-            maxTokens: MASTER_MAX_TOKENS,
-        });
-        assertSameChat(chatId);
-        const parsed = parseMasterResponse(raw, { heroNames });
-        parsed.rolls = parsed.rolls.map((tag) => planRoll(state, tag, heroNames)).filter(Boolean);
+        const ask = async (checkMode) => {
+            const raw = await callModel({
+                role: 'master',
+                model: settings.masterModel,
+                messages: buildMasterPrompt({ state, cards, language: settings.language, check: checkMode, deathMode: settings.deathMode }),
+                maxTokens: MASTER_MAX_TOKENS,
+            });
+            assertSameChat(chatId);
+            const result = parseMasterResponse(raw, { heroNames });
+            result.rolls = result.rolls.map((tag) => planRoll(state, tag, heroNames)).filter(Boolean);
+            return result;
+        };
+        let parsed = await ask(check);
         if (check.mode === 'forbidden' && parsed.rolls.length) {
             console.warn(`${LOG_PREFIX} бросок в этом ходе не положен (частота проверок ${settings.checkFrequency} %), метки пропущены`, parsed.rolls);
             parsed.rolls = [];
         } else if (check.mode === 'required' && !parsed.rolls.length) {
-            console.warn(`${LOG_PREFIX} мастер не поставил обязательную проверку для ${check.hero}`);
+            // Переспрос (PLAN 8.2): один раз, с напоминанием. Не помогло — ход идёт без броска, как раньше.
+            console.warn(`${LOG_PREFIX} мастер не поставил обязательную проверку для ${check.hero}, переспрашиваю`);
+            const retry = await ask({ ...check, reminder: true });
+            if (retry.rolls.length) parsed = retry;
+            else console.warn(`${LOG_PREFIX} мастер и после напоминания не поставил проверку для ${check.hero}, ход без броска`);
         }
 
         // Записку пользователь писал на ближайший ход мастера (FR-19).
         useNote(state, note);
 
         if (!parsed.rolls.length) {
-            await recordMasterTurn(state, parsed.text, [], parsed.sceneEnd, parsed.changes);
+            await recordMasterTurn(state, parsed.text, [], parsed.sceneEnd, parsed.changes, { hours: elapsedHours(parsed) });
             return { author: 'master', masterChoice: resolveNext(state, parsed.next), sceneEnd: parsed.sceneEnd };
         }
+
+        // До броска исход неизвестен: урон, предметы и время из части «попытка» не применяем (PLAN 8.2).
+        // Применение способности без броска (use) не теряем: оно не зависит от исхода.
+        const early = parsed.changes.filter((change) => change.hp || Object.keys(change.stats).length || change.add.length || change.remove.length);
+        if (early.length || parsed.hours) console.warn(`${LOG_PREFIX} блок STATE до броска пропущен: исход ещё не известен`, early, parsed.hours);
+        const attemptChanges = parsed.changes
+            .filter((change) => change.use.length)
+            .map((change) => ({ ...change, hp: 0, stats: {}, add: [], remove: [] }));
 
         // Мастер остановился на попытке: бросаем, показываем плашки, просим описать исход (FR-13, FR-14).
         rolls = parsed.rolls.map((plan) => performRoll(state, plan));
@@ -135,7 +162,7 @@ async function masterTurn(state, chatId) {
         // Способность, проверенная броском, уже прокачана: в описании исхода её «use» второй раз не считаем.
         state.session.rolledAbilities = rolls.filter((roll) => roll.ability).map((roll) => `${roll.hero}:${roll.ability}`);
         const abilityLines = rolls.map((roll) => roll.abilityLine).filter(Boolean);
-        await recordMasterTurn(state, parsed.text, rolls, false, parsed.changes, { extraLines: abilityLines });
+        await recordMasterTurn(state, parsed.text, rolls, false, attemptChanges, { extraLines: abilityLines });
         for (const roll of rolls) {
             await postAsMaster(roll.line, { kind: 'roll', roll });
             if (roll.abilityLine) await postAsMaster(`📋 ${roll.abilityLine}`, { kind: 'state', turn: state.turns.length });
@@ -147,7 +174,7 @@ async function masterTurn(state, chatId) {
     const outcomeRaw = await callModel({
         role: 'master',
         model: settings.masterModel,
-        messages: buildMasterPrompt({ state, cards, language: settings.language, mode: 'outcome' }),
+        messages: buildMasterPrompt({ state, cards, language: settings.language, mode: 'outcome', deathMode: settings.deathMode }),
         maxTokens: MASTER_MAX_TOKENS,
     });
     assertSameChat(chatId);
@@ -159,7 +186,7 @@ async function masterTurn(state, chatId) {
     state.session.pendingOutcome = false;
     const skipUses = state.session.rolledAbilities ?? [];
     state.session.rolledAbilities = [];
-    await recordMasterTurn(state, outcome.text, [], outcome.sceneEnd, outcome.changes, { skipUses });
+    await recordMasterTurn(state, outcome.text, [], outcome.sceneEnd, outcome.changes, { skipUses, hours: elapsedHours(outcome) });
     if (!rolls.length) rolls = state.turns.findLast((turn) => turn.rolls?.length)?.rolls ?? [];
     return {
         author: 'master',
@@ -192,6 +219,14 @@ async function compressMemory(state, chatId) {
     }
 }
 
+// Игровое время хода: "time" из STATE, а если мастер его забыл, но написал «спустя сутки», — из текста (PLAN 8.5).
+function elapsedHours(parsed) {
+    if (parsed.hours) return parsed.hours;
+    const hours = hoursFromText(parsed.text);
+    if (hours) console.log(`${LOG_PREFIX} мастер не указал "time", время взято из текста: ${hours} ч`);
+    return hours;
+}
+
 function useNote(state, note) {
     if (consumeMasterNote(state.session, note)) console.log(`${LOG_PREFIX} записка передана мастеру и снята: «${note}»`);
 }
@@ -211,8 +246,12 @@ function decideCheck(state, frequency) {
 
 // Изменения HP, статов, инвентаря и применения способностей из блока [STATE ...] (FR-15, FR-31) применяются сразу
 // и видны всем: строки идут в историю и в чат. extraLines — прокачка способностей от бросков, их чат получает после плашек.
-async function recordMasterTurn(state, text, rolls, sceneEnd, changes = [], { extraLines = [], skipUses = [] } = {}) {
-    const changeLines = applyStateChanges(state.heroes, changes, { skipUses });
+// hours — прошедшее игровое время; после изменений герои с HP 0 выбывают, отлежавшие сутки встают (PLAN 8.5).
+async function recordMasterTurn(state, text, rolls, sceneEnd, changes = [], { extraLines = [], skipUses = [], hours = 0 } = {}) {
+    const changeLines = [
+        ...applyStateChanges(state.heroes, changes, { skipUses }),
+        ...applyVitality(state, { hours, mode: getSettings().deathMode }),
+    ];
     if (changeLines.length) console.log(`${LOG_PREFIX} изменения состояния героев:`, changeLines, changes);
     state.turns.push({ n: state.turns.length + 1, author: 'master', text, rolls, changes: [...extraLines, ...changeLines], next: null, sceneEnd: Boolean(sceneEnd) });
     await saveState();
