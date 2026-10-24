@@ -251,13 +251,8 @@
     font-style: italic;
 }
 
-/* Полноэкранная страница (этап 7, FR-27) */
+/* Страница игры (этап 7, FR-27). С этапа 9 живёт в отдельной вкладке браузера (game.html), в ST узел скрыт */
 .rpga-page {
-    position: fixed;
-    inset: 0;
-    z-index: 9000;
-    background-color: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(var(--SmartThemeBlurStrength, 8px));
     color: var(--SmartThemeBodyColor, #ddd);
 }
 
@@ -265,10 +260,26 @@
     display: none;
 }
 
+body.rpga-window {
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+    background-color: var(--SmartThemeBlurTintColor, #1e1e1e);
+}
+
+body.rpga-window .rpga-page {
+    height: 100vh;
+}
+
+.rpga-page .rpga-page-head .rpga-session-status {
+    white-space: nowrap;
+    opacity: 0.85;
+}
+
 .rpga-page .rpga-page-inner {
     display: flex;
     flex-direction: column;
-    max-width: 1000px;
+    max-width: 1100px;
     height: 100%;
     margin: 0 auto;
     background-color: var(--SmartThemeBlurTintColor, #1e1e1e);
@@ -390,4 +401,317 @@
 .rpga-panel .rpga-condition-line {
     display: block;
     font-style: italic;
+}
+
+/* Панель над строкой ввода (этап 9, FR-28): слева меню 🎲, справа счётчик и кнопки управления */
+.rpga-dock {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 6px;
+    position: relative;
+}
+
+.rpga-dock.rpga-dock-floating {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    z-index: 3000;
+}
+
+.rpga-dock .rpga-dock-left {
+    position: relative;
+}
+
+.rpga-dock .rpga-dock-icon {
+    font-size: 1.35em;
+    padding: 4px 6px;
+    cursor: pointer;
+    opacity: 0.75;
+    border-radius: 6px;
+}
+
+.rpga-dock .rpga-dock-icon:hover,
+.rpga-dock .rpga-dock-icon.rpga-dock-icon-active {
+    opacity: 1;
+    color: var(--SmartThemeQuoteColor, #e18a24);
+}
+
+.rpga-dock .rpga-menu {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 4px);
+    z-index: 3001;
+    width: min(320px, 90vw);
+    max-height: 70vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 10px;
+    background-color: var(--SmartThemeBlurTintColor, #1e1e1e);
+    backdrop-filter: blur(var(--SmartThemeBlurStrength, 8px));
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.rpga-dock .rpga-menu[hidden],
+.rpga-dock .rpga-menu-form[hidden] {
+    display: none;
+}
+
+.rpga-dock .rpga-menu-title {
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.rpga-dock .rpga-menu-row {
+    display: flex;
+    gap: 4px;
+}
+
+.rpga-dock .rpga-menu-row .menu_button {
+    flex: 1;
+}
+
+.rpga-dock .rpga-menu-item {
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    justify-content: flex-start;
+}
+
+.rpga-dock .rpga-menu-form {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0 6px 10px;
+    border-left: 2px solid var(--SmartThemeQuoteColor, #e18a24);
+}
+
+.rpga-dock .rpga-dock-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.rpga-dock .rpga-dock-right .rpga-session-status {
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.75;
+}
+
+.rpga-dock .rpga-dock-counter {
+    font-variant-numeric: tabular-nums;
+    padding: 0 4px;
+    white-space: nowrap;
+}
+
+.rpga-dock .rpga-dock-counter b {
+    font-size: 1.25em;
+}
+
+.rpga-dock .rpga-dock-button {
+    min-width: 2.2em;
+    margin: 0;
+    padding: 2px 8px;
+    font-size: 1.15em;
+    line-height: 1.3;
+}
+
+@media (max-width: 600px) {
+    .rpga-dock .rpga-dock-right .rpga-session-status {
+        display: none;
+    }
+}
+
+/* Вкладка «Персонажи» (этап 9) */
+.rpga-page .rpga-profiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 14px;
+}
+
+.rpga-page .rpga-profile {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 12px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.15));
+}
+
+.rpga-page .rpga-profile[data-condition="down"] {
+    border-color: #6c7ae0;
+}
+
+.rpga-page .rpga-profile[data-condition="dead"] {
+    border-color: #c0392b;
+    filter: grayscale(0.7);
+}
+
+.rpga-page .rpga-profile-head {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.rpga-page .rpga-profile-avatar {
+    width: 84px;
+    height: 84px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid var(--SmartThemeQuoteColor, #e18a24);
+}
+
+.rpga-page .rpga-profile-title {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.rpga-page .rpga-profile-title h3 {
+    margin: 0;
+    font-size: 1.4em;
+}
+
+.rpga-page .rpga-hp-big {
+    position: relative;
+    height: 18px;
+    border-radius: 9px;
+    background: rgba(128, 128, 128, 0.3);
+    overflow: hidden;
+}
+
+.rpga-page .rpga-hp-big .rpga-hp-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8e1f16, #e74c3c);
+}
+
+.rpga-page .rpga-hp-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8em;
+    font-weight: bold;
+    text-shadow: 0 0 3px #000;
+}
+
+.rpga-page .rpga-profile-stats {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+}
+
+.rpga-page .rpga-stat-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 2px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.rpga-page .rpga-stat-tile small {
+    opacity: 0.7;
+    letter-spacing: 0.05em;
+}
+
+.rpga-page .rpga-stat-tile b {
+    font-size: 1.3em;
+}
+
+.rpga-page .rpga-stat-tile span {
+    font-size: 0.8em;
+    opacity: 0.8;
+}
+
+.rpga-page .rpga-profile h4 {
+    margin: 0 0 4px;
+}
+
+.rpga-page .rpga-profile-ability {
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    border-left: 3px solid var(--SmartThemeQuoteColor, #e18a24);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.rpga-page .rpga-profile-ability-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.rpga-page .rpga-profile-ability-head small {
+    color: var(--SmartThemeQuoteColor, #e18a24);
+    white-space: nowrap;
+}
+
+.rpga-page .rpga-profile-ability p {
+    margin: 4px 0 0;
+    font-size: 0.9em;
+    opacity: 0.85;
+}
+
+.rpga-page .rpga-level-bar {
+    height: 5px;
+    margin: 4px 0 2px;
+    border-radius: 3px;
+    background: rgba(128, 128, 128, 0.3);
+    overflow: hidden;
+}
+
+.rpga-page .rpga-level-fill {
+    height: 100%;
+    background: var(--SmartThemeQuoteColor, #e18a24);
+}
+
+.rpga-page .rpga-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.rpga-page .rpga-chip {
+    padding: 2px 8px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 999px;
+    font-size: 0.9em;
+}
+
+.rpga-page .rpga-profile-goals p {
+    margin: 2px 0;
+}
+
+.rpga-page .rpga-profile-thoughts summary {
+    cursor: pointer;
+    opacity: 0.85;
+}
+
+.rpga-page .rpga-profile-thoughts p {
+    margin: 4px 0 0;
+    font-style: italic;
+    opacity: 0.85;
+}
+
+@media (max-width: 420px) {
+    .rpga-page .rpga-profile-stats {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }

@@ -11,7 +11,8 @@ import {
     CHAPTER_MAX_TURNS, HISTORIAN_STYLES, appendChapter, buildHistorianPrompt, chapterHtml, chapterRange, chronicleCursor, chronicleMarkdown,
     exportFileName, parseChapter, pendingTurns, unchronicledCount,
 } from './chronicle.js';
-import { openPage } from './page.js';
+import { isPageOpen, showTab } from './page.js';
+import { $$, downloadFile } from './dom.js';
 
 const HISTORIAN_MAX_TOKENS = 2000;
 const HISTORIAN_TEMPERATURE = 0.8;
@@ -80,9 +81,12 @@ export async function writeChapter() {
         // Пробная глава про те же ходы больше не сохраняется: граница сдвинулась.
         if (preview?.saveable) preview.saveable = false;
         console.log(`${LOG_PREFIX} летопись: глава ${chapter.n} «${chapter.title}», ${chapterRange(chapter)}`);
-        toastr.success(`Глава ${chapter.n}: «${chapter.title}»`, 'Летопись');
-        openPage('chronicle');
-        scrollToChapter(chapter.n);
+        // Вкладку браузера после долгого запроса открыть нельзя (блокировщик всплывающих окон): показываем главу, только если страница уже открыта.
+        toastr.success(`Глава ${chapter.n}: «${chapter.title}»${isPageOpen() ? '' : '. Читать — «📖 Страница игры» → «Летопись»'}`, 'Летопись');
+        if (isPageOpen()) {
+            showTab('chronicle');
+            scrollToChapter(chapter.n);
+        }
     } finally {
         renderChronicle();
     }
@@ -106,12 +110,12 @@ async function tryChapter() {
 
     // Переписывая последнюю главу, Историк не должен видеть её как «прошлую».
     const view = saveable ? state : { ...state, chronicle: state.chronicle.slice(0, -1) };
-    $('#rpga_chronicle_status').text('🧪 Историк пишет пробную главу…');
+    $$('#rpga_chronicle_status').text('🧪 Историк пишет пробную главу…');
     const parsed = await runHistorian(view, turns);
     const { scene, upTo } = chronicleCursor(getState());
     preview = { chatId: chatId(), scene, upTo, fromTurn: turns[0].n, toTurn: turns.at(-1).n, saveable, ...parsed };
     renderChronicle();
-    document.getElementById('rpga_chronicle_preview')?.scrollIntoView({ block: 'start' });
+    $$('#rpga_chronicle_preview')[0]?.scrollIntoView({ block: 'start' });
 }
 
 async function keepPreview() {
@@ -138,19 +142,11 @@ function dropPreview() {
 function exportChronicle() {
     const state = getState();
     if (!state?.chronicle?.length) throw new Error('Летопись пуста: экспортировать нечего');
-    const blob = new Blob([chronicleMarkdown(state)], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = exportFileName(state);
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadFile(new Blob([chronicleMarkdown(state)], { type: 'text/markdown;charset=utf-8' }), exportFileName(state));
 }
 
 function scrollToChapter(n) {
-    document.getElementById(`rpga_chapter_${n}`)?.scrollIntoView({ block: 'start' });
+    $$(`#rpga_chapter_${n}`)[0]?.scrollIntoView({ block: 'start' });
 }
 
 // ---------- Страница летописи ----------
@@ -170,14 +166,14 @@ export function renderChronicle() {
         status = `Новых ходов для главы: ${pending} (${chapterRange({ scene: chronicleCursor(state).scene, fromTurn: turns[0].n, toTurn: turns.at(-1).n })})`;
         if (pending > CHAPTER_MAX_TURNS) status += `; в одну главу войдут первые ${CHAPTER_MAX_TURNS}`;
     }
-    $('#rpga_chronicle_status').text(status);
-    $('.rpga-chronicle-write').toggleClass('rpga-off', !state || writing || !pending);
-    $('#rpga_chronicle_try').toggleClass('rpga-off', !state || writing || (!pending && !chapters.length));
-    $('#rpga_chronicle_export').toggleClass('rpga-off', !chapters.length);
+    $$('#rpga_chronicle_status').text(status);
+    $$('.rpga-chronicle-write').toggleClass('rpga-off', !state || writing || !pending);
+    $$('#rpga_chronicle_try').toggleClass('rpga-off', !state || writing || (!pending && !chapters.length));
+    $$('#rpga_chronicle_export').toggleClass('rpga-off', !chapters.length);
 
     renderPreview();
 
-    const toc = $('#rpga_chronicle_toc').empty();
+    const toc = $$('#rpga_chronicle_toc').empty();
     if (chapters.length > 1) {
         toc.append($('<b>').text('Оглавление'));
         const list = $('<ol>').appendTo(toc);
@@ -186,7 +182,7 @@ export function renderChronicle() {
         }
     }
 
-    const box = $('#rpga_chronicle_chapters').empty();
+    const box = $$('#rpga_chronicle_chapters').empty();
     for (const chapter of chapters) {
         box.append($('<article class="rpga-chapter">').attr('id', `rpga_chapter_${chapter.n}`)
             .append($('<h3 class="rpga-chapter-title">').text(`Глава ${chapter.n}. ${chapter.title}`))
@@ -203,14 +199,14 @@ function withStyle(text, style) {
 
 function renderPreview() {
     const show = Boolean(preview) && preview.chatId === chatId();
-    $('#rpga_chronicle_preview').prop('hidden', !show);
+    $$('#rpga_chronicle_preview').prop('hidden', !show);
     if (!show) return;
     const range = chapterRange({ scene: preview.scene, fromTurn: preview.fromTurn, toTurn: preview.toTurn });
     const meta = withStyle(range, preview.style);
-    $('#rpga_chronicle_preview_meta').text(preview.saveable ? `${meta} · не сохранена` : `${meta} · другая версия последней главы, только для сравнения`);
-    $('#rpga_chronicle_preview_title').text(preview.title);
-    $('#rpga_chronicle_preview_text').html(chapterHtml(preview.text));
-    $('#rpga_chronicle_keep').toggleClass('rpga-off', !preview.saveable);
+    $$('#rpga_chronicle_preview_meta').text(preview.saveable ? `${meta} · не сохранена` : `${meta} · другая версия последней главы, только для сравнения`);
+    $$('#rpga_chronicle_preview_title').text(preview.title);
+    $$('#rpga_chronicle_preview_text').html(chapterHtml(preview.text));
+    $$('#rpga_chronicle_keep').toggleClass('rpga-off', !preview.saveable);
 }
 
 /** Подписывает кнопки летописи. Кнопки подписывает index.js через общий bindButton. */
@@ -220,8 +216,8 @@ export function bindChronicle(bindButton) {
     bindButton('#rpga_chronicle_try', tryChapter);
     bindButton('#rpga_chronicle_keep', keepPreview);
     bindButton('#rpga_chronicle_export', async () => exportChronicle());
-    $('#rpga_chronicle_drop').on('click', dropPreview);
-    $('#rpga_chronicle_toc').on('click', 'a[data-chapter]', function (event) {
+    $$('#rpga_chronicle_drop').on('click', dropPreview);
+    $$('#rpga_chronicle_toc').on('click', 'a[data-chapter]', function (event) {
         event.preventDefault();
         scrollToChapter($(this).data('chapter'));
     });

@@ -4,9 +4,10 @@
 // Этап 3: старт игры — мир, две карточки, листы героев, завязка, язык игры (src/startPanel.js).
 // Этап 4: автосессия — цикл ходов, лимит, конец сцены, пауза на ошибке, главная панель (src/autosession.js).
 // Этап 5: вмешательство — тайная микроцель герою и записка мастеру (src/intervention.js).
-// Этап 7: полноэкранная страница с вкладками (src/page.js), Историк и летопись (src/historian.js).
+// Этап 7: страница игры с вкладками (src/page.js), Историк и летопись (src/historian.js).
+// Этап 9: меню и кнопки управления над строкой ввода (src/dock.js), страница игры в отдельной вкладке браузера.
 
-import { EXTENSION_ROOT, LOG_PREFIX } from './src/constants.js';
+import { LOG_PREFIX } from './src/constants.js';
 import { getSettings, updateSettings } from './src/settings.js';
 import { getState, saveState } from './src/state.js';
 import { callModel } from './src/llm.js';
@@ -17,54 +18,51 @@ import { bindIntervention } from './src/intervention.js';
 import { bindPage, renderPage } from './src/page.js';
 import { bindChronicle, renderChronicle } from './src/historian.js';
 import { clearPromptLog, promptLogSize, promptLogText } from './src/logger.js';
+import { $$, downloadFile } from './src/dom.js';
+import { bindDock, renderDock } from './src/dock.js';
 
 const PING_MESSAGES = [
     { role: 'system', content: 'Ты помогаешь проверить подключение. Отвечай одной короткой фразой на русском.' },
     { role: 'user', content: 'Назови свою модель и скажи «готов».' },
 ];
 
-async function renderPanel() {
-    const response = await fetch(`${EXTENSION_ROOT}panel.html`);
-    if (!response.ok) throw new Error(`Не удалось загрузить panel.html: ${response.status}`);
-    $('#extensions_settings2').append(await response.text());
-}
 
 function bindSettings() {
     const settings = getSettings();
 
-    $('#rpga_transport').val(settings.transport).on('change', function () {
+    $$('#rpga_transport').val(settings.transport).on('change', function () {
         updateSettings({ transport: String($(this).val()) });
         toggleKeyBlock();
     });
-    $('#rpga_openrouter_key').val(settings.openrouterKey).on('input', function () {
+    $$('#rpga_openrouter_key').val(settings.openrouterKey).on('input', function () {
         updateSettings({ openrouterKey: String($(this).val()).trim() });
     });
-    $('#rpga_master_model').val(settings.masterModel).on('input', function () {
+    $$('#rpga_master_model').val(settings.masterModel).on('input', function () {
         updateSettings({ masterModel: String($(this).val()).trim() });
     });
-    $('#rpga_hero_model').val(settings.heroModel).on('input', function () {
+    $$('#rpga_hero_model').val(settings.heroModel).on('input', function () {
         updateSettings({ heroModel: String($(this).val()).trim() });
     });
-    $('#rpga_language').val(settings.language).on('input', function () {
+    $$('#rpga_language').val(settings.language).on('input', function () {
         updateSettings({ language: String($(this).val()).trim() || 'русский' });
     });
-    $('#rpga_historian_style').val(settings.historianStyle).on('change', function () {
+    $$('#rpga_historian_style').val(settings.historianStyle).on('change', function () {
         updateSettings({ historianStyle: String($(this).val()) });
     });
-    $('#rpga_death_mode').val(settings.deathMode).on('change', function () {
+    $$('#rpga_death_mode').val(settings.deathMode).on('change', function () {
         updateSettings({ deathMode: String($(this).val()) });
     });
-    $('#rpga_log_prompts').prop('checked', settings.logPrompts).on('change', function () {
+    $$('#rpga_log_prompts').prop('checked', settings.logPrompts).on('change', function () {
         updateSettings({ logPrompts: $(this).prop('checked') });
     });
 
-    bindNumber('#rpga_max_turns', 'maxTurns', 1, 500);
+    bindNumber('#rpga_max_turns', 'maxTurns', 1, 500, { after: clampTurnsLeft });
     bindNumber('#rpga_turn_delay', 'turnDelaySec', 0, 60, { integer: false });
     bindNumber('#rpga_randomness', 'randomness', 0, 100);
     bindNumber('#rpga_check_frequency', 'checkFrequency', 0, 100);
     bindNumber('#rpga_silence', 'silenceThreshold', 0, 50);
     bindNumber('#rpga_memory_threshold', 'memoryThreshold', 0, 200);
-    $('#rpga_stop_scene_end').prop('checked', settings.stopAtSceneEnd).on('change', function () {
+    $$('#rpga_stop_scene_end').prop('checked', settings.stopAtSceneEnd).on('change', function () {
         updateSettings({ stopAtSceneEnd: $(this).prop('checked') });
     });
 
@@ -72,12 +70,13 @@ function bindSettings() {
 }
 
 // Числовая настройка: сохраняем только допустимое значение, при уходе из поля показываем сохранённое.
-function bindNumber(selector, key, min, max, { integer = true } = {}) {
-    $(selector).val(getSettings()[key]).on('input', function () {
+function bindNumber(selector, key, min, max, { integer = true, after } = {}) {
+    $$(selector).val(getSettings()[key]).on('input', function () {
         const raw = Number($(this).val());
         if ($(this).val() === '' || !Number.isFinite(raw)) return;
         const value = integer ? Math.round(raw) : raw;
         updateSettings({ [key]: Math.min(max, Math.max(min, value)) });
+        after?.(getSettings()[key]);
         renderSession();
     }).on('change', function () {
         $(this).val(getSettings()[key]);
@@ -87,29 +86,29 @@ function bindNumber(selector, key, min, max, { integer = true } = {}) {
 // «💾 Лог промптов» (новое, PLAN 8.3): все запросы и ответы этой вкладки одним .txt.
 function downloadPromptLog() {
     if (!promptLogSize()) throw new Error('Лог пуст: запросов к моделям в этой вкладке ещё не было');
-    const blob = new Blob([promptLogText()], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `rpg-prompts-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    $('#rpga_prompt_log_status').text(`Скачано запросов: ${promptLogSize()}`);
+    downloadFile(new Blob([promptLogText()], { type: 'text/plain;charset=utf-8' }), `rpg-prompts-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`);
+    $$('#rpga_prompt_log_status').text(`Скачано запросов: ${promptLogSize()}`);
 }
 
 function clearLog() {
     clearPromptLog();
-    $('#rpga_prompt_log_status').text('Лог очищен');
+    $$('#rpga_prompt_log_status').text('Лог очищен');
+}
+
+// Лимит уменьшили: остаток ходов не может быть больше нового лимита, иначе «13 из 5» (PLAN 8.7).
+function clampTurnsLeft(maxTurns) {
+    const state = getState();
+    if (!state || state.session.turnsLeft <= maxTurns) return;
+    state.session.turnsLeft = maxTurns;
+    saveState().catch((error) => console.error(LOG_PREFIX, error));
 }
 
 function toggleKeyBlock() {
-    $('#rpga_key_block').toggle(getSettings().transport === 'direct');
+    $$('#rpga_key_block').toggle(getSettings().transport === 'direct');
 }
 
 function output(text) {
-    $('#rpga_test_output').text(text);
+    $$('#rpga_test_output').text(text);
 }
 
 // 1.2: по очереди вызываем модель мастера и модель героев, не трогая подключение ST.
@@ -172,7 +171,7 @@ async function testMessages() {
 }
 
 function bindButton(selector, handler, show = output) {
-    $(selector).on('click', async function () {
+    $$(selector).on('click', async function () {
         const button = $(this);
         if (button.hasClass('disabled') || button.hasClass('rpga-off')) return;
         button.addClass('disabled');
@@ -190,25 +189,26 @@ function bindButton(selector, handler, show = output) {
 
 jQuery(async () => {
     try {
-        await renderPanel();
+        await renderDock();
         await renderPage();
-        bindPage({ game: renderStartPanel, chronicle: renderChronicle });
+        bindPage({ heroes: renderSession, game: renderStartPanel, chronicle: renderChronicle });
         bindSettings();
         bindButton('#rpga_test_models', testModels);
         bindButton('#rpga_test_state', testState);
         bindButton('#rpga_test_messages', testMessages);
-        const logStatus = (text) => $('#rpga_prompt_log_status').text(text);
+        const logStatus = (text) => $$('#rpga_prompt_log_status').text(text);
         bindButton('#rpga_prompt_log_download', downloadPromptLog, logStatus);
         bindButton('#rpga_prompt_log_clear', clearLog, logStatus);
         bindStartPanel((selector, handler) => bindButton(selector, handler, gameOutput));
-        const sessionOutput = (text) => $('#rpga_session_output').text(text);
+        const sessionOutput = (text) => $$('#rpga_session_output').text(text);
         bindSession((selector, handler) => bindButton(selector, handler, sessionOutput));
         bindIntervention((selector, handler) => bindButton(selector, handler, sessionOutput), () => {
             renderSession();
             renderStartPanel();
         });
 
-        bindChronicle((selector, handler) => bindButton(selector, handler, (text) => $('#rpga_chronicle_status').text(text)));
+        bindChronicle((selector, handler) => bindButton(selector, handler, (text) => $$('#rpga_chronicle_status').text(text)));
+        bindDock();
 
         renderSession();
         renderChronicle();

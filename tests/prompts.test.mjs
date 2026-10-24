@@ -125,3 +125,11 @@ test('герой без сознания: мастеру напоминают п
     Object.assign(state.heroes[1], { condition: 'down', downUntil: 24 });
     assert.match(text(buildMasterPrompt({ state, cards, language: 'русский' })), /Без сознания: Лиа \(ещё 24 ч\)\. Если в этом ходе проходит игровое время, обязательно/);
 });
+
+test('урон (PLAN 8.6): мастеру велят снимать HP за опасные провалы, и в обычном ходе, и в исходе броска', () => {
+    const turn = text(buildMasterPrompt({ state: makeState(), cards, language: 'русский' }));
+    assert.match(turn, /Мир опасен, не щади героев/);
+    assert.match(turn, /Ориентир урона/);
+    const outcome = text(buildMasterPrompt({ state: makeState(), cards, language: 'русский', mode: 'outcome' }));
+    assert.match(outcome, /нанеси урон блоком STATE/);
+});

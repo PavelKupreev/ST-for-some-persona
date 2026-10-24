@@ -8,7 +8,7 @@ import { getSettings } from './settings.js';
 import { getState, saveState } from './state.js';
 import { postSystemNote } from './chat.js';
 import { STATS, abilityModifier } from './dice.js';
-import { progressText } from './abilities.js';
+import { ABILITY_MAX_LEVEL, LEVEL_AT, progressText, usesToNext } from './abilities.js';
 import { playStep } from './game.js';
 import { HERO_IDS } from './prompts.js';
 import { startProblems } from './setup.js';
@@ -17,6 +17,7 @@ import { renderIntervention } from './intervention.js';
 import { unchronicledWarning } from './chronicle.js';
 import { renderChronicle } from './historian.js';
 import { conditionText, heroCondition } from './vitality.js';
+import { $$, ask } from './dom.js';
 
 /**
  * Цикл, который крутится в этой вкладке. Живёт только в памяти: после перезагрузки ST
@@ -56,7 +57,7 @@ async function startSession() {
     if (ownsChat()) return;
     const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
     if (problems.length) throw new Error(`Нельзя начать: ${problems.join('; ')}`);
-    if (state.turns.length && !confirm(`В этом чате уже есть сцена. Начать новую? История сцены очистится, сообщения в чате останутся.\n\nЧтобы продолжить текущую, нажмите «Отмена», затем «Продолжить».${unchronicledWarning(state)}`)) return;
+    if (state.turns.length && !ask(`В этом чате уже есть сцена. Начать новую? История сцены очистится, сообщения в чате останутся.\n\nЧтобы продолжить текущую, нажмите «Отмена», затем «Продолжить».${unchronicledWarning(state)}`)) return;
 
     resetScene(state);
     state.session.turnsLeft = getSettings().maxTurns;
@@ -186,7 +187,7 @@ async function halt(state, status, reason, { error = false } = {}) {
 // ---------- Главная панель (FR-28) ----------
 
 function sessionOutput(text) {
-    $('#rpga_session_output').text(text);
+    $$('#rpga_session_output').text(text);
 }
 
 function renderAll() {
@@ -198,14 +199,14 @@ function renderAll() {
 /** Перерисовывает счётчик, статус, кнопки сессии и краткие листы героев. */
 export function renderSession() {
     const state = getState();
-    $('#rpga_session').toggle(Boolean(state));
+    $$('#rpga_session').toggle(Boolean(state));
     if (!state) return;
     normalizeStatus(state);
 
     const { status, reason, turnsLeft } = state.session;
     const running = status === 'running';
-    $('#rpga_turns_left').text(status === 'idle' ? getSettings().maxTurns : turnsLeft);
-    $('#rpga_turns_total').text(`из ${getSettings().maxTurns}`);
+    $$('#rpga_turns_left').text(status === 'idle' ? getSettings().maxTurns : turnsLeft);
+    $$('#rpga_turns_total').text(`/${getSettings().maxTurns}`);
 
     let statusText = STATUS_TEXT[status] ?? status;
     if (running && loop?.request) statusText = loop.request === 'stopped' ? 'Останавливается после текущего хода…' : 'Пауза после текущего хода…';
@@ -214,43 +215,94 @@ export function renderSession() {
         const index = HERO_IDS.indexOf(state.session.next);
         statusText += ` · следующий: ${index === -1 ? 'Мастер' : state.heroes[index]?.name ?? '?'}`;
     }
-    $('#rpga_session_status').text(statusText).attr('data-status', status);
+    $$('#rpga_session_status').text(statusText).attr('data-status', status);
+    $$('#rpga_page_session').text(`${statusText} · ходов ${status === 'idle' ? getSettings().maxTurns : turnsLeft}/${getSettings().maxTurns}`).attr('data-status', status);
 
-    $('#rpga_session_pause').toggleClass('rpga-off', !running || Boolean(loop?.request));
-    $('#rpga_session_continue').toggleClass('rpga-off', status !== 'paused');
-    $('#rpga_session_stop').toggleClass('rpga-off', !(running || status === 'paused') || loop?.request === 'stopped');
+    $$('#rpga_session_pause').toggleClass('rpga-off', !running || Boolean(loop?.request));
+    $$('#rpga_session_continue').toggleClass('rpga-off', status !== 'paused');
+    $$('#rpga_session_stop').toggleClass('rpga-off', !(running || status === 'paused') || loop?.request === 'stopped');
 
     renderHeroCards(state);
     renderIntervention(state);
 }
 
+// Вкладка «Персонажи» на странице игры (этап 9): профиль героя целиком — видит только пользователь.
 function renderHeroCards(state) {
-    const box = $('#rpga_hero_cards').empty();
-    if (state.heroes.length !== 2) {
-        box.append($('<small>').text('Герои ещё не готовы.'));
-        return;
+    const box = $$('#rpga_hero_cards').empty();
+    $$('#rpga_heroes_empty').text(state.heroes.length === 2 ? '' : 'Герои ещё не готовы: выберите две карточки и создайте листы во вкладке «Игра».');
+    if (state.heroes.length !== 2) return;
+    const clock = state.clock?.hours ?? 0;
+    state.heroes.forEach((hero, index) => box.append(heroProfile(state, hero, index, clock)));
+}
+
+function heroProfile(state, hero, index, clock) {
+    const { current, max } = hero.hp;
+    const percent = max > 0 ? Math.max(0, Math.min(100, Math.round((current / max) * 100))) : 0;
+    const condition = heroCondition(hero);
+    const card = $('<article class="rpga-profile">').attr('data-condition', condition);
+
+    const avatar = $('<img class="rpga-profile-avatar" alt="">').attr('src', avatarUrl(hero));
+    const badge = { ok: '⚔️ в строю', down: '💤 без сознания', dead: '💀 погиб' }[condition];
+    card.append($('<header class="rpga-profile-head">')
+        .append(avatar)
+        .append($('<div class="rpga-profile-title">')
+            .append($('<h3>').text(hero.name))
+            .append($('<small>').text(`Герой ${index + 1} · ${badge}`).attr('title', conditionText(hero, clock)))
+            .append($('<div class="rpga-hp-bar rpga-hp-big">')
+                .append($('<div class="rpga-hp-fill">').css('width', `${percent}%`))
+                .append($('<span class="rpga-hp-label">').text(`HP ${current} / ${max}`)))));
+    if (condition !== 'ok') card.append($('<small class="rpga-condition-line">').text(conditionText(hero, clock)));
+
+    const stats = $('<div class="rpga-profile-stats">');
+    for (const stat of STATS) {
+        stats.append($('<div class="rpga-stat-tile">')
+            .append($('<small>').text(stat))
+            .append($('<b>').text(hero.stats[stat]))
+            .append($('<span>').text(formatMod(hero.stats[stat]))));
     }
-    for (const hero of state.heroes) {
-        const { current, max } = hero.hp;
-        const percent = max > 0 ? Math.max(0, Math.min(100, Math.round((current / max) * 100))) : 0;
-        const condition = heroCondition(hero);
-        const card = $('<div class="rpga-hero-mini">').toggleClass('rpga-down', current <= 0 || condition !== 'ok');
-        const mark = { down: '💤 ', dead: '💀 ' }[condition] ?? '';
-        card.append($('<div class="rpga-hero-mini-head">')
-            .append($('<b>').text(`${mark}${hero.name}`).attr('title', conditionText(hero, state.clock?.hours ?? 0)))
-            .append($('<span class="rpga-hp-text">').text(`HP ${current}/${max}`)));
-        if (condition !== 'ok') card.append($('<small class="rpga-condition-line">').text(conditionText(hero, state.clock?.hours ?? 0)));
-        card.append($('<div class="rpga-hp-bar">').append($('<div class="rpga-hp-fill">').css('width', `${percent}%`)));
-        card.append($('<small class="rpga-stat-line">').text(STATS.map((stat) => `${stat} ${hero.stats[stat]} (${formatMod(hero.stats[stat])})`).join(' · ')));
-        // Навыки 5e (PLAN 6.3) отключены по просьбе пользователя:
-        // card.append($('<small class="rpga-skill-line">').text(`🛠 ${hero.skills?.length ? hero.skills.map((id) => SKILLS[id]?.ru ?? id).join(', ') : '—'}`).attr('title', 'Навыки с владением: +2 к проверке'));
-        for (const ability of (hero.abilities ?? []).filter((item) => item.name)) {
-            card.append($('<small class="rpga-ability-line">').text(`✨ ${ability.name} · ${progressText(ability)}`).attr('title', ability.description || ability.name));
+    card.append(stats);
+
+    const abilities = (hero.abilities ?? []).filter((item) => item.name);
+    if (abilities.length) {
+        const list = $('<div class="rpga-profile-abilities">').append($('<h4>').text('✨ Способности'));
+        for (const ability of abilities) {
+            const next = usesToNext(ability);
+            const from = LEVEL_AT[ability.level - 1] ?? 0;
+            const progress = next === null ? 100 : Math.round(((ability.uses - from) / Math.max(1, next - from)) * 100);
+            list.append($('<div class="rpga-profile-ability">')
+                .append($('<div class="rpga-profile-ability-head">')
+                    .append($('<b>').text(ability.name))
+                    .append($('<small>').text(`${ability.stat} · ${'★'.repeat(ability.level)}${'☆'.repeat(ABILITY_MAX_LEVEL - ability.level)}`)))
+                .append($('<div class="rpga-level-bar">').append($('<div class="rpga-level-fill">').css('width', `${progress}%`)))
+                .append($('<small class="rpga-ability-progress">').text(progressText(ability)))
+                .append(ability.description ? $('<p>').text(ability.description) : null));
         }
-        card.append($('<small class="rpga-inv-line">').text(`🎒 ${hero.inventory?.length ? hero.inventory.join(', ') : '—'}`).attr('title', 'Инвентарь'));
-        card.append($('<small class="rpga-micro-line">').text(`🎯 ${hero.microGoal || '—'}`).attr('title', 'Тайная микроцель: видят только этот герой и мастер'));
-        box.append(card);
+        card.append(list);
     }
+
+    const inventory = $('<div class="rpga-profile-inventory">').append($('<h4>').text('🎒 Инвентарь'));
+    const chips = $('<div class="rpga-chips">');
+    (hero.inventory?.length ? hero.inventory : ['пусто']).forEach((item) => chips.append($('<span class="rpga-chip">').text(item)));
+    card.append(inventory.append(chips));
+
+    card.append($('<div class="rpga-profile-goals">')
+        .append($('<p>').append($('<b>').text('🌟 Цель: ')).append(document.createTextNode(hero.globalGoal || '—')))
+        .append($('<p>').attr('title', 'Видят только этот герой и мастер').append($('<b>').text('🎯 Микроцель (тайная): ')).append(document.createTextNode(hero.microGoal || '—'))));
+
+    const thoughts = state.turns.findLast((turn) => turn.author === HERO_IDS[index] && turn.thoughts)?.thoughts;
+    if (thoughts) {
+        card.append($('<details class="rpga-profile-thoughts">')
+            .append($('<summary>').text('💭 Последние мысли'))
+            .append($('<p>').text(thoughts)));
+    }
+    return card;
+}
+
+function avatarUrl(hero) {
+    if (!hero.cardAvatar || hero.cardAvatar === 'none') return new URL('/img/ai4.png', location.href).href;
+    const { getThumbnailUrl } = SillyTavern.getContext();
+    // Вкладка страницы открыта по другому адресу: путь к миниатюре делаем абсолютным.
+    return new URL(getThumbnailUrl('avatar', hero.cardAvatar), location.href).href;
 }
 
 function formatMod(score) {
@@ -263,8 +315,8 @@ export function bindSession(bindButton) {
     bindButton('#rpga_session_start', startSession);
     bindButton('#rpga_session_continue', continueSession);
     // Пауза и Стоп должны срабатывать, пока «Старт» или «Продолжить» ждут конца цикла, поэтому без общей блокировки.
-    $('#rpga_session_pause').on('click', () => !$('#rpga_session_pause').hasClass('rpga-off') && pauseSession().catch(showError));
-    $('#rpga_session_stop').on('click', () => !$('#rpga_session_stop').hasClass('rpga-off') && stopSession().catch(showError));
+    $$('#rpga_session_pause').on('click', () => !$$('#rpga_session_pause').hasClass('rpga-off') && pauseSession().catch(showError));
+    $$('#rpga_session_stop').on('click', () => !$$('#rpga_session_stop').hasClass('rpga-off') && stopSession().catch(showError));
 }
 
 function showError(error) {

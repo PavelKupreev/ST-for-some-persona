@@ -5,6 +5,7 @@
 import { LOG_PREFIX } from './constants.js';
 import { getState, saveState } from './state.js';
 import { HERO_IDS } from './prompts.js';
+import { $$ } from './dom.js';
 
 export const INTERVENTION_MAX_LENGTH = 500;
 
@@ -48,12 +49,12 @@ export function consumeMasterNote(session, sent) {
 /** Поля вмешательства: список героев, текущая записка. Вызывается из renderSession. */
 export function renderIntervention(state) {
     const ready = state.heroes.length === 2;
-    $('#rpga_intervene').toggle(ready);
+    $$('#rpga_intervene').toggle(ready);
     if (!ready) return;
 
     // Панель перерисовывается после каждого хода: список пересобираем, только если сменились герои,
     // иначе раскрытый пользователем выпадающий список закрылся бы посреди выбора.
-    const select = $('#rpga_micro_hero');
+    const select = $$('#rpga_micro_hero');
     const names = state.heroes.map((hero) => hero.name);
     if (select.find('option').map((_, option) => option.textContent).get().join('\n') !== names.join('\n')) {
         const chosen = select.val();
@@ -64,19 +65,19 @@ export function renderIntervention(state) {
     showCurrentMicroGoal(state);
 
     const note = state.session.masterNote;
-    $('#rpga_note_status').text(note ? `✉️ Ждёт ближайшего хода мастера: «${note}»` : '');
-    $('#rpga_note_cancel').toggleClass('rpga-off', !note);
+    $$('#rpga_note_status').text(note ? `✉️ Ждёт ближайшего хода мастера: «${note}»` : '');
+    $$('#rpga_note_cancel').toggleClass('rpga-off', !note);
     refreshInterventionButtons();
 }
 
 function showCurrentMicroGoal(state) {
-    const hero = state.heroes[HERO_IDS.indexOf($('#rpga_micro_hero').val())];
-    $('#rpga_micro_text').attr('placeholder', hero?.microGoal ? `Сейчас: ${hero.microGoal}` : 'сходить в магазин');
+    const hero = state.heroes[HERO_IDS.indexOf($$('#rpga_micro_hero').val())];
+    $$('#rpga_micro_text').attr('placeholder', hero?.microGoal ? `Сейчас: ${hero.microGoal}` : 'сходить в магазин');
 }
 
 function refreshInterventionButtons() {
-    $('#rpga_micro_set').toggleClass('rpga-off', !String($('#rpga_micro_text').val()).trim());
-    $('#rpga_note_send').toggleClass('rpga-off', !String($('#rpga_note_text').val()).trim());
+    $$('#rpga_micro_set').toggleClass('rpga-off', !String($$('#rpga_micro_text').val()).trim());
+    $$('#rpga_note_send').toggleClass('rpga-off', !String($$('#rpga_note_text').val()).trim());
 }
 
 function requireHeroes() {
@@ -92,30 +93,30 @@ function requireHeroes() {
  * @param {() => void} onChange перерисовать панели после изменения
  */
 export function bindIntervention(bindButton, onChange) {
-    $('#rpga_micro_hero').on('change', () => {
+    $$('#rpga_micro_hero').on('change', () => {
         const state = getState();
         if (state) showCurrentMicroGoal(state);
     });
-    $('#rpga_micro_text, #rpga_note_text').on('input', refreshInterventionButtons);
+    $$('#rpga_micro_text, #rpga_note_text').on('input', refreshInterventionButtons);
 
     bindButton('#rpga_micro_set', async () => {
         const state = requireHeroes();
-        const heroIndex = HERO_IDS.indexOf($('#rpga_micro_hero').val());
-        const previous = applyMicroGoal(state, heroIndex, $('#rpga_micro_text').val());
+        const heroIndex = HERO_IDS.indexOf($$('#rpga_micro_hero').val());
+        const previous = applyMicroGoal(state, heroIndex, $$('#rpga_micro_text').val());
         const hero = state.heroes[heroIndex];
         await saveState();
         console.log(`${LOG_PREFIX} микроцель ${HERO_IDS[heroIndex]} (${hero.name}): «${previous || '—'}» → «${hero.microGoal}»`);
-        $('#rpga_micro_text').val('');
+        $$('#rpga_micro_text').val('');
         onChange();
         toastr.success(`${hero.name}: «${hero.microGoal}». Видят только ${hero.name} и мастер, со следующего хода.`, 'Микроцель');
     });
 
     bindButton('#rpga_note_send', async () => {
         const state = requireHeroes();
-        applyMasterNote(state.session, $('#rpga_note_text').val());
+        applyMasterNote(state.session, $$('#rpga_note_text').val());
         await saveState();
         console.log(`${LOG_PREFIX} записка мастеру ждёт его хода: «${state.session.masterNote}»`);
-        $('#rpga_note_text').val('');
+        $$('#rpga_note_text').val('');
         onChange();
         toastr.success('Мастер получит её в ближайший ход, герои не увидят.', 'Записка мастеру');
     });

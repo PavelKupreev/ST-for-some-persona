@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RPG-автосессия</title>
+    <link rel="icon" href="assets/master.svg">
+    <style>
+        body { margin: 0; background: #1e1e1e; color: #ddd; font-family: sans-serif; }
+        #rpga_window_wait { max-width: 520px; margin: 18vh auto; padding: 0 16px; line-height: 1.5; text-align: center; }
+        #rpga_window_wait[hidden] { display: none; }
+        #rpga_window_wait ~ #rpga_page { opacity: 1; }
+        #rpga_window_wait:not([hidden]) ~ #rpga_page { display: none; }
+    </style>
+</head>
+<body>
+    <div id="rpga_window_wait">
+        <h2>🎲 RPG-автосессия</h2>
+        <p>Подключаюсь к SillyTavern…</p>
+        <p><small>Эта вкладка открывается из ST: меню 🎲 в строке ввода → «📖 Страница игры». Вкладка ST должна оставаться открытой: игра идёт в ней.</small></p>
+    </div>
+    <script src="game-window.js"></script>
+</body>
+</html>

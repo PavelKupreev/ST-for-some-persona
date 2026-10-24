@@ -3,13 +3,19 @@
         <div class="rpga-page-head">
             <b class="rpga-page-title">RPG-автосессия</b>
             <div class="rpga-tabs">
+                <div class="menu_button rpga-tab" data-tab="heroes">🧝 Персонажи</div>
                 <div class="menu_button rpga-tab" data-tab="game">🎲 Игра</div>
                 <div class="menu_button rpga-tab" data-tab="chronicle">📜 Летопись</div>
                 <div class="menu_button rpga-tab" data-tab="settings">⚙️ Настройки</div>
             </div>
-            <div id="rpga_page_close" class="menu_button rpga-page-close" title="Закрыть (Esc)">✕</div>
+            <small id="rpga_page_session" class="rpga-session-status"></small>
         </div>
         <div class="rpga-page-body">
+            <div class="rpga-pane" data-pane="heroes">
+                <small id="rpga_heroes_empty" class="rpga-hint"></small>
+                <div id="rpga_hero_cards" class="rpga-profiles"></div>
+            </div>
+
             <div class="rpga-pane" data-pane="game">
                 <div class="rpga-section">
                     <h4>Мир, герои и старт</h4>
@@ -48,9 +54,8 @@
                         <b>3. Завязка сцены</b>
                         <textarea id="rpga_premise" class="text_pole" rows="3" placeholder="Пусто — мастер придумает завязку сам"></textarea>
 
-                        <small>Сцену запускает «▶ Старт» в блоке «Автосессия» на панели расширений. Вручную, по одному ходу:</small>
+                        <small>Сцену запускает «▶ Старт» в меню 🎲 слева в строке ввода ST, по одному ходу — кнопка ⏭ справа над строкой ввода.</small>
                         <div class="rpga-buttons">
-                            <div id="rpga_one_turn" class="menu_button">Один ход</div>
                             <div id="rpga_reset_scene" class="menu_button">Сбросить сцену</div>
                         </div>
                     </div>

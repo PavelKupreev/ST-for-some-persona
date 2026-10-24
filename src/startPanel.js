@@ -19,6 +19,7 @@ import { renderSession } from './autosession.js';
 import { unchronicledWarning } from './chronicle.js';
 import { renderChronicle } from './historian.js';
 import { resetVitality } from './vitality.js';
+import { $$, ask } from './dom.js';
 
 const SETUP_MAX_TOKENS = 1500;
 const SAVE_DELAY_MS = 600;
@@ -45,21 +46,21 @@ function findCard(avatar) {
 }
 
 export function gameOutput(text) {
-    $('#rpga_game_output').text(text);
+    $$('#rpga_game_output').text(text);
 }
 
 /** Перерисовывает всю панель старта из состояния текущего чата. */
 export function renderStartPanel() {
     const state = getState();
-    $('#rpga_start_block').toggle(Boolean(state));
-    $('#rpga_no_chat').toggle(!state);
+    $$('#rpga_start_block').toggle(Boolean(state));
+    $$('#rpga_no_chat').toggle(!state);
     if (!state) return;
 
-    $('#rpga_world_prompt').val(state.setup.worldPrompt || state.world?.prompt || '');
+    $$('#rpga_world_prompt').val(state.setup.worldPrompt || state.world?.prompt || '');
     renderWorldForm(state);
     renderCardList(state);
     renderHeroForms(state);
-    $('#rpga_premise').val(state.scene.premise ?? '');
+    $$('#rpga_premise').val(state.scene.premise ?? '');
     refreshButtons();
 }
 
@@ -67,9 +68,9 @@ export function renderStartPanel() {
 
 function renderWorldForm(state) {
     const world = state.world;
-    $('#rpga_world_form').toggle(Boolean(world));
+    $$('#rpga_world_form').toggle(Boolean(world));
     if (!world) return;
-    $('#rpga_world_form [data-world]').each(function () {
+    $$('#rpga_world_form [data-world]').each(function () {
         const key = $(this).data('world');
         $(this).val(key === 'rules' ? (world.rules ?? []).join('\n') : world[key] ?? '');
     });
@@ -77,9 +78,9 @@ function renderWorldForm(state) {
 
 async function expandWorld() {
     const state = requireState();
-    const prompt = String($('#rpga_world_prompt').val()).trim();
+    const prompt = String($$('#rpga_world_prompt').val()).trim();
     if (!prompt) throw new Error('Напишите промпт мира');
-    if (state.world && !confirm('Карточка мира уже есть. Заменить её новой?')) return;
+    if (state.world && !ask('Карточка мира уже есть. Заменить её новой?')) return;
 
     gameOutput('Мастер придумывает мир...');
     const settings = getSettings();
@@ -111,8 +112,8 @@ function onWorldFieldInput() {
 // ---------- 3.2 Выбор двух карточек ----------
 
 function renderCardList(state) {
-    const filter = String($('#rpga_card_filter').val() ?? '').trim().toLowerCase();
-    const list = $('#rpga_card_list').empty();
+    const filter = String($$('#rpga_card_filter').val() ?? '').trim().toLowerCase();
+    const list = $$('#rpga_card_list').empty();
     const selected = state.setup.selected;
 
     for (const character of characters()) {
@@ -126,7 +127,7 @@ function renderCardList(state) {
         list.append(row);
     }
     if (!list.children().length) list.append($('<small>').text(characters().length ? 'Ничего не найдено' : 'В библиотеке ST нет карточек'));
-    $('#rpga_pick_count').text(`Выбрано: ${selected.length} из 2`).toggleClass('rpga-bad', selected.length !== 2);
+    $$('#rpga_pick_count').text(`Выбрано: ${selected.length} из 2`).toggleClass('rpga-bad', selected.length !== 2);
 }
 
 function onCardToggle() {
@@ -160,7 +161,7 @@ async function generateHeroes() {
     const state = requireState();
     if (!state.world) throw new Error('Сначала создайте карточку мира');
     const cards = selectedCards(state);
-    if (heroesMatchSelection(state) && !confirm('Листы героев уже есть. Перегенерировать и затереть правки?')) return;
+    if (heroesMatchSelection(state) && !ask('Листы героев уже есть. Перегенерировать и затереть правки?')) return;
 
     gameOutput('Мастер составляет листы героев...');
     const settings = getSettings();
@@ -190,7 +191,7 @@ async function generateHeroes() {
 async function fillHeroesManually() {
     const state = requireState();
     const cards = selectedCards(state);
-    if (heroesMatchSelection(state) && !confirm('Листы героев уже есть. Сбросить их к пустым?')) return;
+    if (heroesMatchSelection(state) && !ask('Листы героев уже есть. Сбросить их к пустым?')) return;
     state.heroes = cards.map((card) => createHero(card, blankSheet()));
     await saveState();
     renderHeroForms(state);
@@ -199,7 +200,7 @@ async function fillHeroesManually() {
 }
 
 function renderHeroForms(state) {
-    const box = $('#rpga_hero_forms').empty();
+    const box = $$('#rpga_hero_forms').empty();
     if (!heroesMatchSelection(state)) {
         if (state.setup.selected.length === 2) box.append($('<small>').text('Для выбранных карточек листов ещё нет: нажмите «Сгенерировать» или «Заполнить вручную».'));
         return;
@@ -335,19 +336,19 @@ function onHeroFieldInput() {
 export function refreshButtons() {
     const state = getState();
     if (!state) return;
-    const hasPrompt = Boolean(String($('#rpga_world_prompt').val()).trim());
+    const hasPrompt = Boolean(String($$('#rpga_world_prompt').val()).trim());
     const twoCards = state.setup.selected.length === 2;
-    $('#rpga_world_expand').toggleClass('rpga-off', !hasPrompt);
-    $('#rpga_heroes_generate').toggleClass('rpga-off', !twoCards || !state.world);
-    $('#rpga_heroes_manual').toggleClass('rpga-off', !twoCards);
+    $$('#rpga_world_expand').toggleClass('rpga-off', !hasPrompt);
+    $$('#rpga_heroes_generate').toggleClass('rpga-off', !twoCards || !state.world);
+    $$('#rpga_heroes_manual').toggleClass('rpga-off', !twoCards);
 
     const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
     const running = state.session.status === 'running';
-    $('#rpga_session_start').toggleClass('rpga-off', problems.length > 0 || running);
-    $('#rpga_start_hint').text(problems.length ? `Чтобы начать: ${problems.join('; ')}. Мир и героев готовят на «📖 Странице игры», вкладка «Игра».` : '');
+    $$('#rpga_session_start').toggleClass('rpga-off', problems.length > 0 || running);
+    $$('#rpga_start_hint').text(problems.length ? `Чтобы начать: ${problems.join('; ')}. Мир и героев готовят на «📖 Странице игры», вкладка «Игра».` : '');
     // «Один ход» (концепция А) работает и без автосессии: первое нажатие открывает сцену.
-    $('#rpga_one_turn').toggleClass('rpga-off', running || (!state.turns.length && problems.length > 0));
-    $('#rpga_reset_scene').toggleClass('rpga-off', running || !state.turns.length);
+    $$('#rpga_one_turn').toggleClass('rpga-off', running || (!state.turns.length && problems.length > 0));
+    $$('#rpga_reset_scene').toggleClass('rpga-off', running || !state.turns.length);
 }
 
 /**
@@ -371,7 +372,7 @@ export function resetScene(state) {
 
 export async function resetSceneClick() {
     const state = requireState();
-    if (!confirm(`Очистить историю сцены? Мир и герои останутся, сообщения в чате и летопись тоже.${unchronicledWarning(state)}`)) return;
+    if (!ask(`Очистить историю сцены? Мир и герои останутся, сообщения в чате и летопись тоже.${unchronicledWarning(state)}`)) return;
     resetScene(state);
     await saveState();
     refreshButtons();
@@ -420,7 +421,7 @@ export function bindStartPanel(bindButton) {
     bindButton('#rpga_one_turn', oneTurn);
     bindButton('#rpga_reset_scene', resetSceneClick);
 
-    $('#rpga_world_prompt').on('input', function () {
+    $$('#rpga_world_prompt').on('input', function () {
         const state = getState();
         if (state) {
             state.setup.worldPrompt = String($(this).val());
@@ -428,16 +429,16 @@ export function bindStartPanel(bindButton) {
         }
         refreshButtons();
     });
-    $('#rpga_world_form').on('input', '[data-world]', onWorldFieldInput);
-    $('#rpga_card_filter').on('input', () => {
+    $$('#rpga_world_form').on('input', '[data-world]', onWorldFieldInput);
+    $$('#rpga_card_filter').on('input', () => {
         const state = getState();
         if (state) renderCardList(state);
     });
-    $('#rpga_card_list').on('change', 'input[type="checkbox"]', onCardToggle);
-    $('#rpga_hero_forms').on('input', 'input:not([type=checkbox]), textarea', onHeroFieldInput);
-    $('#rpga_hero_forms').on('change', 'input[type=checkbox], select', onHeroFieldInput);
-    $('#rpga_hero_forms').on('click', '.rpga-ability-add, .rpga-ability-del', onAbilityButton);
-    $('#rpga_premise').on('input', function () {
+    $$('#rpga_card_list').on('change', 'input[type="checkbox"]', onCardToggle);
+    $$('#rpga_hero_forms').on('input', 'input:not([type=checkbox]), textarea', onHeroFieldInput);
+    $$('#rpga_hero_forms').on('change', 'input[type=checkbox], select', onHeroFieldInput);
+    $$('#rpga_hero_forms').on('click', '.rpga-ability-add, .rpga-ability-del', onAbilityButton);
+    $$('#rpga_premise').on('input', function () {
         const state = getState();
         if (!state) return;
         state.scene.premise = String($(this).val());
