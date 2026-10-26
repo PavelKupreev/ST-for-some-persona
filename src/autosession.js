@@ -11,8 +11,8 @@ import { STATS, abilityModifier } from './dice.js';
 import { ABILITY_MAX_LEVEL, LEVEL_AT, progressText, usesToNext } from './abilities.js';
 import { playStep } from './game.js';
 import { HERO_IDS } from './prompts.js';
-import { startProblems } from './setup.js';
-import { refreshButtons, resetScene } from './startPanel.js';
+import { readyProblems, refreshButtons, resetScene } from './startPanel.js';
+import { isDialogue } from './dialogue.js';
 import { renderIntervention } from './intervention.js';
 import { unchronicledWarning } from './chronicle.js';
 import { renderChronicle } from './historian.js';
@@ -55,7 +55,7 @@ function normalizeStatus(state) {
 async function startSession() {
     const state = requireState();
     if (ownsChat()) return;
-    const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
+    const problems = readyProblems(state);
     if (problems.length) throw new Error(`Нельзя начать: ${problems.join('; ')}`);
     if (state.turns.length && !ask(`В этом чате уже есть сцена. Начать новую? История сцены очистится, сообщения в чате останутся.\n\nЧтобы продолжить текущую, нажмите «Отмена», затем «Продолжить».${unchronicledWarning(state)}`)) return;
 
@@ -222,6 +222,12 @@ export function renderSession() {
     $$('#rpga_session_continue').toggleClass('rpga-off', status !== 'paused');
     $$('#rpga_session_stop').toggleClass('rpga-off', !(running || status === 'paused') || loop?.request === 'stopped');
 
+    // Простой диалог (PLAN 10.1): ни Историка, ни вмешательства в мастера.
+    const dialogue = isDialogue(state);
+    $$('#rpga_chronicle_write').toggle(!dialogue);
+    $$('.rpga-tab[data-tab="chronicle"]').toggle(!dialogue);
+    $$('#rpga_one_turn').attr('title', dialogue ? 'Одна реплика персонажа, чья очередь' : 'Один ход: мастер и, если он передал слово, герой');
+
     renderHeroCards(state);
     renderIntervention(state);
 }
@@ -229,10 +235,29 @@ export function renderSession() {
 // Вкладка «Персонажи» на странице игры (этап 9): профиль героя целиком — видит только пользователь.
 function renderHeroCards(state) {
     const box = $$('#rpga_hero_cards').empty();
-    $$('#rpga_heroes_empty').text(state.heroes.length === 2 ? '' : 'Герои ещё не готовы: выберите две карточки и создайте листы во вкладке «Игра».');
+    const empty = isDialogue(state) ? 'Выберите две карточки во вкладке «Игра».' : 'Герои ещё не готовы: выберите две карточки и создайте листы во вкладке «Игра».';
+    $$('#rpga_heroes_empty').text(state.heroes.length === 2 ? '' : empty);
     if (state.heroes.length !== 2) return;
     const clock = state.clock?.hours ?? 0;
-    state.heroes.forEach((hero, index) => box.append(heroProfile(state, hero, index, clock)));
+    const profile = isDialogue(state) ? dialogueProfile : heroProfile;
+    state.heroes.forEach((hero, index) => box.append(profile(state, hero, index, clock)));
+}
+
+// В простом диалоге у персонажа нет листа: только аватар, имя и последние мысли.
+function dialogueProfile(state, hero, index) {
+    const card = $('<article class="rpga-profile">');
+    card.append($('<header class="rpga-profile-head">')
+        .append($('<img class="rpga-profile-avatar" alt="">').attr('src', avatarUrl(hero)))
+        .append($('<div class="rpga-profile-title">')
+            .append($('<h3>').text(hero.name))
+            .append($('<small>').text(`Собеседник ${index + 1} · реплик: ${state.turns.filter((turn) => turn.author === HERO_IDS[index]).length}`))));
+    const thoughts = state.turns.findLast((turn) => turn.author === HERO_IDS[index] && turn.thoughts)?.thoughts;
+    if (thoughts) {
+        card.append($('<details class="rpga-profile-thoughts" open>')
+            .append($('<summary>').text('💭 Последние мысли'))
+            .append($('<p>').text(thoughts)));
+    }
+    return card;
 }
 
 function heroProfile(state, hero, index, clock) {

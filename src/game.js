@@ -17,6 +17,7 @@ import { applyStateChanges } from './heroState.js';
 import { findAbility, useAbility } from './abilities.js';
 import { applySummaries, buildSummaryPrompts, turnsToCompress } from './memory.js';
 import { activeHeroes, applyVitality, heroCondition, hoursFromText, isActive } from './vitality.js';
+import { buildDialoguePrompt, dialogueNext, isDialogue } from './dialogue.js';
 
 const MASTER_MAX_TOKENS = 700;
 const HERO_MAX_TOKENS = 500;
@@ -31,6 +32,7 @@ const SUMMARY_MAX_TOKENS = 600;
 export async function playStep() {
     const state = requireGame();
     const chatId = SillyTavern.getContext().getCurrentChatId();
+    if (isDialogue(state)) return dialogueStep(state, chatId);
     if (state.heroes.every((hero) => heroCondition(hero) === 'dead')) {
         return { author: 'none', report: '💀 Все герои погибли, игра окончена', sceneEnd: false, allDead: true };
     }
@@ -80,10 +82,24 @@ export async function playOneTurn() {
     return report.join('\n');
 }
 
+/**
+ * Простой диалог (PLAN 10.1): одна реплика персонажа, чья очередь. Мастера, бросков и HP нет.
+ * Ход сорвался — очередь та же, следующий вызов повторит реплику (FR-22).
+ */
+async function dialogueStep(state, chatId) {
+    const heroIndex = HERO_IDS.indexOf(dialogueNext(state));
+    await heroTurn(state, heroIndex, chatId, { buildPrompt: buildDialoguePrompt, foreignNames: [state.heroes[1 - heroIndex].name] });
+    state.session.next = dialogueNext(state);
+    state.turns[state.turns.length - 1].next = state.session.next;
+    await saveState();
+    await compressMemory(state, chatId);
+    return { author: HERO_IDS[heroIndex], report: `${state.heroes[heroIndex].name} → ${state.heroes[1 - heroIndex].name}`, sceneEnd: false, allDead: false };
+}
+
 function requireGame() {
     const state = getState();
     if (!state) throw new Error('Сначала откройте чат');
-    if (state.heroes.length !== 2) throw new Error('Нет героев: подготовьте мир и героев в «Старте игры»');
+    if (state.heroes.length !== 2) throw new Error(isDialogue(state) ? 'Выберите две карточки на «📖 Странице игры», вкладка «Игра»' : 'Нет героев: подготовьте мир и героев в «Старте игры»');
     return state;
 }
 
@@ -314,7 +330,7 @@ function resolveNext(state, next) {
     return chosen;
 }
 
-async function heroTurn(state, heroIndex, chatId) {
+async function heroTurn(state, heroIndex, chatId, { buildPrompt = buildHeroPrompt, foreignNames } = {}) {
     const settings = getSettings();
     const hero = state.heroes[heroIndex];
     const other = state.heroes[1 - heroIndex];
@@ -324,11 +340,11 @@ async function heroTurn(state, heroIndex, chatId) {
     const raw = await callModel({
         role: HERO_IDS[heroIndex],
         model: settings.heroModel,
-        messages: buildHeroPrompt({ state, heroIndex, card: toPromptCard(character), language: settings.language }),
+        messages: buildPrompt({ state, heroIndex, card: toPromptCard(character), language: settings.language }),
         maxTokens: HERO_MAX_TOKENS,
     });
     assertSameChat(chatId);
-    const parsed = parseHeroResponse(raw, { foreignNames: [other.name, 'Мастер', 'Master'] });
+    const parsed = parseHeroResponse(raw, { foreignNames: foreignNames ?? [other.name, 'Мастер', 'Master'] });
 
     state.turns.push({ n: state.turns.length + 1, author: HERO_IDS[heroIndex], ...parsed });
     await saveState();

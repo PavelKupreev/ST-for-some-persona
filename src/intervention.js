@@ -6,6 +6,7 @@ import { LOG_PREFIX } from './constants.js';
 import { getState, saveState } from './state.js';
 import { HERO_IDS } from './prompts.js';
 import { $$ } from './dom.js';
+import { isDialogue } from './dialogue.js';
 
 export const INTERVENTION_MAX_LENGTH = 500;
 
@@ -48,7 +49,8 @@ export function consumeMasterNote(session, sent) {
 
 /** Поля вмешательства: список героев, текущая записка. Вызывается из renderSession. */
 export function renderIntervention(state) {
-    const ready = state.heroes.length === 2;
+    // В простом диалоге (PLAN 10.1) мастера нет: ни записки, ни микроцели.
+    const ready = state.heroes.length === 2 && !isDialogue(state);
     $$('#rpga_intervene').toggle(ready);
     if (!ready) return;
 

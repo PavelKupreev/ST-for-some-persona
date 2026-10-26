@@ -19,6 +19,7 @@ import { renderSession } from './autosession.js';
 import { unchronicledWarning } from './chronicle.js';
 import { renderChronicle } from './historian.js';
 import { resetVitality } from './vitality.js';
+import { GAME_MODES, dialogueProblems, isDialogue } from './dialogue.js';
 import { $$, ask } from './dom.js';
 
 const SETUP_MAX_TOKENS = 1500;
@@ -56,12 +57,60 @@ export function renderStartPanel() {
     $$('#rpga_no_chat').toggle(!state);
     if (!state) return;
 
+    renderMode(state);
     $$('#rpga_world_prompt').val(state.setup.worldPrompt || state.world?.prompt || '');
     renderWorldForm(state);
     renderCardList(state);
     renderHeroForms(state);
     $$('#rpga_premise').val(state.scene.premise ?? '');
     refreshButtons();
+}
+
+// ---------- 10.1 Режим: RPG или простой диалог ----------
+
+function renderMode(state) {
+    const dialogue = isDialogue(state);
+    $$('#rpga_mode').val(dialogue ? 'dialogue' : 'rpg');
+    $$('.rpga-rpg-only').toggle(!dialogue);
+    $$('.rpga-dialogue-only').toggle(dialogue);
+    $$('#rpga_heroes_title').text(dialogue ? '1. Собеседники' : '2. Герои');
+    $$('#rpga_premise_title').text(dialogue ? '2. Место и тема разговора' : '3. Завязка сцены');
+    $$('#rpga_premise').attr('placeholder', dialogue ? 'Пусто — персонажи сами найдут, о чём поговорить' : 'Пусто — мастер придумает завязку сам');
+}
+
+async function onModeChange() {
+    const state = getState();
+    if (!state) return;
+    const mode = String($(this).val());
+    if (state.session.status === 'running') {
+        $(this).val(state.mode);
+        toastr.warning('Идёт сессия: сначала нажмите «Пауза» или «Стоп»', 'RPG-автосессия');
+        return;
+    }
+    state.mode = GAME_MODES.includes(mode) ? mode : 'rpg';
+    syncDialogueHeroes(state);
+    await saveState();
+    renderStartPanel();
+    renderSession();
+    renderChronicle();
+    gameOutput(describeGame());
+}
+
+/**
+ * В диалоге листы не нужны: персонажи — это просто выбранные карточки (пустой лист, чтобы работал общий код).
+ * Листы RPG для тех же карточек не трогаем: при возврате в RPG они на месте.
+ */
+function syncDialogueHeroes(state) {
+    if (!isDialogue(state) || state.setup.selected.length !== 2 || heroesMatchSelection(state)) return;
+    const cards = state.setup.selected.map(findCard);
+    if (cards.some((card) => !card)) return;
+    state.heroes = cards.map((card) => createHero(card, blankSheet()));
+}
+
+/** Что мешает начать в текущем режиме; пустой список — можно стартовать. */
+export function readyProblems(state) {
+    if (isDialogue(state)) return dialogueProblems({ selected: state.setup.selected });
+    return startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
 }
 
 // ---------- 3.1 Мир ----------
@@ -137,6 +186,7 @@ function onCardToggle() {
     const selected = state.setup.selected.filter((item) => item !== avatar);
     if ($(this).prop('checked')) selected.push(avatar);
     state.setup.selected = selected;
+    syncDialogueHeroes(state);
     saveSoon();
     renderCardList(state);
     renderHeroForms(state);
@@ -342,10 +392,11 @@ export function refreshButtons() {
     $$('#rpga_heroes_generate').toggleClass('rpga-off', !twoCards || !state.world);
     $$('#rpga_heroes_manual').toggleClass('rpga-off', !twoCards);
 
-    const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
+    const problems = readyProblems(state);
     const running = state.session.status === 'running';
     $$('#rpga_session_start').toggleClass('rpga-off', problems.length > 0 || running);
-    $$('#rpga_start_hint').text(problems.length ? `Чтобы начать: ${problems.join('; ')}. Мир и героев готовят на «📖 Странице игры», вкладка «Игра».` : '');
+    const where = isDialogue(state) ? 'Карточки выбирают' : 'Мир и героев готовят';
+    $$('#rpga_start_hint').text(problems.length ? `Чтобы начать: ${problems.join('; ')}. ${where} на «📖 Странице игры», вкладка «Игра».` : '');
     // «Один ход» (концепция А) работает и без автосессии: первое нажатие открывает сцену.
     $$('#rpga_one_turn').toggleClass('rpga-off', running || (!state.turns.length && problems.length > 0));
     $$('#rpga_reset_scene').toggleClass('rpga-off', running || !state.turns.length);
@@ -356,6 +407,7 @@ export function refreshButtons() {
  * Неотправленная записка мастеру остаётся: её часто пишут до старта, на первый ход (FR-19).
  */
 export function resetScene(state) {
+    syncDialogueHeroes(state);
     // Сыгранная сцена уходит в прошлое: следующая получит новый номер, летопись начнёт её с первого хода.
     if (state.turns.length) state.scene.number = (state.scene.number ?? 1) + 1;
     state.scene.chronicledUpTo = 0;
@@ -385,7 +437,7 @@ export async function oneTurn() {
     const state = requireState();
     if (state.session.status === 'running') throw new Error('Идёт автосессия: сначала нажмите «Пауза»');
     if (!state.turns.length) {
-        const problems = startProblems({ world: state.world, heroes: state.heroes, selected: state.setup.selected });
+        const problems = readyProblems(state);
         if (problems.length) throw new Error(`Нельзя начать: ${problems.join('; ')}`);
         clearTimeout(saveTimer);
         resetScene(state);
@@ -407,6 +459,12 @@ export function describeGame() {
     if (!state || state.heroes.length !== 2) return '';
     const next = state.session.next;
     const nextName = HERO_IDS.includes(next) ? state.heroes[HERO_IDS.indexOf(next)].name : 'Мастер';
+    if (isDialogue(state)) {
+        return [
+            `Простой диалог: ${state.heroes[0].name} и ${state.heroes[1].name}.`,
+            state.turns.length ? `Реплик в разговоре: ${state.turns.length}. Следующим говорит: ${nextName}.` : 'Разговор ещё не начался.',
+        ].join('\n');
+    }
     return [
         ...state.heroes.map((hero, index) => `Герой ${index + 1}: ${hero.name}, HP ${hero.hp.current}/${hero.hp.max}. Микроцель: ${hero.microGoal || '—'}`),
         state.turns.length ? `Записей в истории сцены: ${state.turns.length}. Следующий ход: ${nextName}.` : 'Сцена ещё не началась.',
@@ -416,6 +474,12 @@ export function describeGame() {
 /** Подписывает поля панели старта. Кнопки подписывает index.js через общий bindButton. */
 export function bindStartPanel(bindButton) {
     bindButton('#rpga_world_expand', expandWorld);
+    $$('#rpga_mode').on('change', function () {
+        onModeChange.call(this).catch((error) => {
+            console.error(LOG_PREFIX, error);
+            toastr.error(error.message, 'RPG-автосессия');
+        });
+    });
     bindButton('#rpga_heroes_generate', generateHeroes);
     bindButton('#rpga_heroes_manual', fillHeroesManually);
     bindButton('#rpga_one_turn', oneTurn);

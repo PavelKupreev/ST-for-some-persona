@@ -9,6 +9,7 @@ const FORBIDDEN_KEYS = ['openrouterKey', 'apiKey', 'api_key'];
 export function createEmptyState() {
     return {
         version: STATE_VERSION,
+        mode: 'rpg', // rpg — мастер, кубики, HP; dialogue — простой диалог двух персонажей (новое, PLAN 10.1)
         world: null,
         heroes: [],
         setup: {

@@ -18,9 +18,17 @@
 
             <div class="rpga-pane" data-pane="game">
                 <div class="rpga-section">
-                    <h4>Мир, герои и старт</h4>
+                    <h4>Режим, персонажи и старт</h4>
                     <small id="rpga_no_chat">Откройте чат: игра хранится в нём.</small>
                     <div id="rpga_start_block" class="rpga-section">
+                        <label for="rpga_mode">Режим</label>
+                        <select id="rpga_mode" class="text_pole">
+                            <option value="rpg">RPG: мастер, кубики, HP, летопись</option>
+                            <option value="dialogue">Простой диалог: два персонажа просто разговаривают</option>
+                        </select>
+                        <small class="rpga-dialogue-only">Без мастера, кубиков и листов: персонажи по очереди отвечают друг другу. Ход — одна реплика.</small>
+
+                        <div class="rpga-section rpga-rpg-only">
                         <b>1. Мир</b>
                         <label for="rpga_world_prompt">Промпт мира</label>
                         <textarea id="rpga_world_prompt" class="text_pole" rows="2" placeholder="фэнтези, драконы, волны чудовищ"></textarea>
@@ -39,19 +47,20 @@
                             <label>Уровень силы</label>
                             <input class="text_pole" type="text" data-world="powerLevel">
                         </div>
+                        </div>
 
-                        <b>2. Герои</b>
-                        <small>Отметьте ровно две карточки. Первая отмеченная станет героем 1.</small>
+                        <b id="rpga_heroes_title">2. Герои</b>
+                        <small>Отметьте ровно две карточки. Первая отмеченная станет первой: она начинает.</small>
                         <small id="rpga_pick_count"></small>
                         <input id="rpga_card_filter" class="text_pole" type="search" placeholder="Поиск карточки">
                         <div id="rpga_card_list" class="rpga-card-list"></div>
-                        <div class="rpga-buttons">
+                        <div class="rpga-buttons rpga-rpg-only">
                             <div id="rpga_heroes_generate" class="menu_button">Сгенерировать</div>
                             <div id="rpga_heroes_manual" class="menu_button">Заполнить вручную</div>
                         </div>
-                        <div id="rpga_hero_forms" class="rpga-section"></div>
+                        <div id="rpga_hero_forms" class="rpga-section rpga-rpg-only"></div>
 
-                        <b>3. Завязка сцены</b>
+                        <b id="rpga_premise_title">3. Завязка сцены</b>
                         <textarea id="rpga_premise" class="text_pole" rows="3" placeholder="Пусто — мастер придумает завязку сам"></textarea>
 
                         <small>Сцену запускает «▶ Старт» в меню 🎲 слева в строке ввода ST, по одному ходу — кнопка ⏭ справа над строкой ввода.</small>
