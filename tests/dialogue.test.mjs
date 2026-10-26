@@ -1,7 +1,7 @@
-// Простой диалог двух персонажей (PLAN 10.1): очередь реплик и изоляция промпта. Запуск: node --test tests/
+// Простой диалог двух персонажей (PLAN 10.1): очередь, изоляция промпта и разбор ответа. Запуск: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDialoguePrompt, dialogueNext, dialogueProblems, isDialogue } from '../src/dialogue.js';
+import { buildDialoguePrompt, dialogueNext, dialogueProblems, isDialogue, parseDialogueResponse } from '../src/dialogue.js';
 
 const SECRET_THOUGHT_2 = 'Арен что-то скрывает';
 const SECRET_CARD_2 = 'тайно служит культу';
@@ -43,25 +43,49 @@ test('промпт: своя карточка, имя собеседника и 
     assert.match(system.content, /Ты — Арен/);
     assert.match(system.content, /Арен беседует с Лиа/);
     assert.match(system.content, /таверна, вечер/);
-    assert.match(system.content, /РЕПЛИКА:/);
+    assert.doesNotMatch(system.content, /РЕПЛИКА:/);
+    assert.match(system.content, /курсивом/);
     assert.doesNotMatch(system.content, /Мастер|HP|бросок|d20/);
     assert.match(user.content, /Начни разговор, Арен/);
 });
 
-test('изоляция: мысли собеседника не попадают в промпт, свои — попадают', () => {
+test('изоляция: в промпт идут сообщения разговора, но ничьи мысли и не карточка собеседника', () => {
     const state = makeState([
+        // ходы старого формата, сыгранные до этапа 10
         { n: 1, author: 'hero1', speech: 'Добрый вечер', intent: 'кивает', thoughts: 'надо быть осторожнее' },
         { n: 2, author: 'hero2', speech: 'И вам', intent: '', thoughts: SECRET_THOUGHT_2 },
+        { n: 3, author: 'hero1', text: '«Дождь опять.» *Арен стряхивает капли с плаща.*' },
+        { n: 4, author: 'hero2', text: '*Лиа пожимает плечами.* «Здесь всегда дождь.»' },
     ]);
-    const messages = buildDialoguePrompt({ state, heroIndex: 0, card: cardOf('Арен'), language: 'русский' });
-    const text = messages.map((message) => message.content).join('\n');
+    const text = buildDialoguePrompt({ state, heroIndex: 0, card: cardOf('Арен'), language: 'русский' }).map((m) => m.content).join('\n');
     assert.doesNotMatch(text, new RegExp(SECRET_THOUGHT_2));
     assert.doesNotMatch(text, new RegExp(SECRET_CARD_2));
-    assert.match(text, /надо быть осторожнее/);
+    assert.doesNotMatch(text, /надо быть осторожнее/);
+    assert.match(text, /Ты \(Арен\): «Добрый вечер» \*кивает\*/);
     assert.match(text, /Лиа: «И вам»/);
+    assert.match(text, /Ты \(Арен\): «Дождь опять\.»/);
+    assert.match(text, /Лиа: \*Лиа пожимает плечами\.\*/);
     assert.match(text, /Твоя очередь, Арен/);
 
-    const own = buildDialoguePrompt({ state, heroIndex: 1, card: cardOf('Лиа'), language: 'русский' }).map((m) => m.content).join('\n');
-    assert.match(own, new RegExp(SECRET_THOUGHT_2));
-    assert.doesNotMatch(own, /надо быть осторожнее/);
+    const other = buildDialoguePrompt({ state, heroIndex: 1, card: cardOf('Лиа'), language: 'русский' }).map((m) => m.content).join('\n');
+    assert.doesNotMatch(other, new RegExp(SECRET_THOUGHT_2));
+    assert.doesNotMatch(other, /надо быть осторожнее/);
+    assert.match(other, /Ты \(Лиа\): \*Лиа пожимает/);
+});
+
+test('ответ: снимается своё имя в начале', () => {
+    assert.deepEqual(parseDialogueResponse('Арен: «Привет.» *улыбается*', { name: 'Арен', otherName: 'Лиа' }), { text: '«Привет.» *улыбается*' });
+    assert.deepEqual(parseDialogueResponse('**Арен:** «Привет.»', { name: 'Арен', otherName: 'Лиа' }), { text: '«Привет.»' });
+    assert.deepEqual(parseDialogueResponse('*Арен садится.* «Ну?»\r\n', { name: 'Арен', otherName: 'Лиа' }), { text: '*Арен садится.* «Ну?»' });
+});
+
+test('ответ: обрезается то, что модель начала писать за собеседника', () => {
+    const raw = '«Ну что, пойдём?»\r\n\r\n*Арен встаёт.*\r\nЛиа: «Пойдём.»\r\n*Лиа тоже встаёт.*';
+    assert.deepEqual(parseDialogueResponse(raw, { name: 'Арен', otherName: 'Лиа' }), { text: '«Ну что, пойдём?»\n\n*Арен встаёт.*' });
+});
+
+test('ответ: пустой — ошибка', () => {
+    assert.throws(() => parseDialogueResponse('   ', { name: 'Арен', otherName: 'Лиа' }), /Пустой ответ персонажа/);
+    assert.throws(() => parseDialogueResponse('Арен:', { name: 'Арен', otherName: 'Лиа' }), /Пустой ответ/);
+    assert.throws(() => parseDialogueResponse('Лиа: «Я за него.»', { name: 'Арен', otherName: 'Лиа' }), /Пустой ответ/);
 });

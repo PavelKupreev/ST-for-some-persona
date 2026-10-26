@@ -243,7 +243,7 @@ function renderHeroCards(state) {
     state.heroes.forEach((hero, index) => box.append(profile(state, hero, index, clock)));
 }
 
-// В простом диалоге у персонажа нет листа: только аватар, имя и последние мысли.
+// В простом диалоге у персонажа нет листа: только аватар, имя и последняя реплика.
 function dialogueProfile(state, hero, index) {
     const card = $('<article class="rpga-profile">');
     card.append($('<header class="rpga-profile-head">')
@@ -251,11 +251,11 @@ function dialogueProfile(state, hero, index) {
         .append($('<div class="rpga-profile-title">')
             .append($('<h3>').text(hero.name))
             .append($('<small>').text(`Собеседник ${index + 1} · реплик: ${state.turns.filter((turn) => turn.author === HERO_IDS[index]).length}`))));
-    const thoughts = state.turns.findLast((turn) => turn.author === HERO_IDS[index] && turn.thoughts)?.thoughts;
-    if (thoughts) {
-        card.append($('<details class="rpga-profile-thoughts" open>')
-            .append($('<summary>').text('💭 Последние мысли'))
-            .append($('<p>').text(thoughts)));
+    const last = state.turns.findLast((turn) => turn.author === HERO_IDS[index] && turn.text)?.text;
+    if (last) {
+        card.append($('<details class="rpga-profile-thoughts">')
+            .append($('<summary>').text('💬 Последняя реплика'))
+            .append($('<p>').text(last.length > 600 ? `${last.slice(0, 600)}…` : last)));
     }
     return card;
 }

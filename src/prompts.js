@@ -262,6 +262,8 @@ export function formatTurns(state, turns, { viewer }) {
         const heroIndex = HERO_IDS.indexOf(turn.author);
         const name = state.heroes[heroIndex]?.name ?? turn.author;
         const own = viewer === turn.author;
+        // Простой диалог (этап 10): ход — одно сообщение без реплики и намерения.
+        if (turn.text && !turn.speech && !turn.intent) return `${name}: ${turn.text}`;
         const lines = [`${own ? `Ты (${name})` : name}: ${turn.speech ? `«${turn.speech}»` : '(молчит)'}`];
         if (turn.intent) lines.push(`  действие: ${turn.intent}`);
         if (turn.thoughts && (own || viewer === 'master')) {

@@ -17,10 +17,11 @@ import { applyStateChanges } from './heroState.js';
 import { findAbility, useAbility } from './abilities.js';
 import { applySummaries, buildSummaryPrompts, turnsToCompress } from './memory.js';
 import { activeHeroes, applyVitality, heroCondition, hoursFromText, isActive } from './vitality.js';
-import { buildDialoguePrompt, dialogueNext, isDialogue } from './dialogue.js';
+import { buildDialoguePrompt, dialogueNext, isDialogue, parseDialogueResponse } from './dialogue.js';
 
 const MASTER_MAX_TOKENS = 700;
 const HERO_MAX_TOKENS = 500;
+const DIALOGUE_MAX_TOKENS = 1500;
 const SUMMARY_MAX_TOKENS = 600;
 
 /**
@@ -87,8 +88,26 @@ export async function playOneTurn() {
  * Ход сорвался — очередь та же, следующий вызов повторит реплику (FR-22).
  */
 async function dialogueStep(state, chatId) {
+    const settings = getSettings();
     const heroIndex = HERO_IDS.indexOf(dialogueNext(state));
-    await heroTurn(state, heroIndex, chatId, { buildPrompt: buildDialoguePrompt, foreignNames: [state.heroes[1 - heroIndex].name] });
+    const hero = state.heroes[heroIndex];
+    const author = HERO_IDS[heroIndex];
+    const character = findCharacter(hero);
+    if (!character) throw new Error(`Карточка «${hero.name}» не найдена в библиотеке ST`);
+
+    const raw = await callModel({
+        role: author,
+        model: settings.heroModel,
+        messages: buildDialoguePrompt({ state, heroIndex, card: toPromptCard(character), language: settings.language }),
+        maxTokens: DIALOGUE_MAX_TOKENS,
+    });
+    assertSameChat(chatId);
+    const { text } = parseDialogueResponse(raw, { name: hero.name, otherName: state.heroes[1 - heroIndex].name });
+
+    state.turns.push({ n: state.turns.length + 1, author, text });
+    await saveState();
+    await postAsCharacter(character, text, { author, turn: state.turns.length });
+
     state.session.next = dialogueNext(state);
     state.turns[state.turns.length - 1].next = state.session.next;
     await saveState();
@@ -330,7 +349,7 @@ function resolveNext(state, next) {
     return chosen;
 }
 
-async function heroTurn(state, heroIndex, chatId, { buildPrompt = buildHeroPrompt, foreignNames } = {}) {
+async function heroTurn(state, heroIndex, chatId) {
     const settings = getSettings();
     const hero = state.heroes[heroIndex];
     const other = state.heroes[1 - heroIndex];
@@ -340,11 +359,11 @@ async function heroTurn(state, heroIndex, chatId, { buildPrompt = buildHeroPromp
     const raw = await callModel({
         role: HERO_IDS[heroIndex],
         model: settings.heroModel,
-        messages: buildPrompt({ state, heroIndex, card: toPromptCard(character), language: settings.language }),
+        messages: buildHeroPrompt({ state, heroIndex, card: toPromptCard(character), language: settings.language }),
         maxTokens: HERO_MAX_TOKENS,
     });
     assertSameChat(chatId);
-    const parsed = parseHeroResponse(raw, { foreignNames: foreignNames ?? [other.name, 'Мастер', 'Master'] });
+    const parsed = parseHeroResponse(raw, { foreignNames: [other.name, 'Мастер', 'Master'] });
 
     state.turns.push({ n: state.turns.length + 1, author: HERO_IDS[heroIndex], ...parsed });
     await saveState();

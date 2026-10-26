@@ -1,10 +1,13 @@
 // Простой диалог (новое, PLAN 10.1): два персонажа из карточек ST по очереди разговаривают друг с другом.
 // Без мастера, кубиков, HP, листов и Историка. Модуль без зависимостей от ST, проверяется тестом в Node.
 //
+// Ход — одно обычное сообщение ролевого чата: речь, действия и описание вперемешку, без меток и мыслей.
+//
 // Изоляция та же, что у героев в RPG (NFR-01): в промпт идут только своя карточка, имя собеседника
-// и видимая часть разговора. Мысли собеседника и его карточка сюда не передаются.
+// и видимая часть разговора. Мысли (из ходов, сыгранных в старом формате) и карточка собеседника сюда не передаются.
 
-import { HERO_IDS, formatCard, formatHistory, formatMemory, languageRule } from './prompts.js';
+import { HERO_IDS, HISTORY_LIMIT, formatCard, formatMemory, languageRule } from './prompts.js';
+import { ParseError } from './parse.js';
 
 export const GAME_MODES = ['rpg', 'dialogue'];
 
@@ -29,7 +32,7 @@ export function dialogueNext(state) {
 }
 
 /**
- * Промпт одной реплики персонажа.
+ * Промпт одного сообщения персонажа.
  * @param {object} params
  * @param {object} params.state
  * @param {0|1} params.heroIndex
@@ -54,14 +57,15 @@ export function buildDialoguePrompt({ state, heroIndex, card, language }) {
         '### МЕСТО И ТЕМА РАЗГОВОРА',
         topic || 'Не заданы: исходи из своей карточки и того, что уже прозвучало.',
         '',
-        '### ФОРМАТ ОТВЕТА',
-        'Ровно три части с метками, без другого текста:',
-        'РЕПЛИКА: что ты говоришь вслух, не больше одного абзаца (или «—», если молчишь)',
-        'ДЕЙСТВИЕ: жест, движение или выражение лица одним коротким предложением (или «—»)',
-        'МЫСЛИ: что ты думаешь на самом деле; это видишь только ты',
+        '### КАК ПИСАТЬ',
+        `Пиши одно сообщение ролевого чата от лица ${hero.name}, как в SillyTavern.`,
+        'Прямая речь — в кавычках «…». Действия, жесты, мимика и описание обстановки — *курсивом*.',
+        'Речь, действие и описание можно смешивать в любом порядке.',
+        'Длину выбирай по ситуации: от одной короткой фразы до нескольких абзацев; обычно 1–3 абзаца средней длины.',
+        'Без меток, заголовков, пояснений вне роли и без своего имени в начале.',
     ];
 
-    const history = formatHistory(state, { viewer: HERO_IDS[heroIndex] });
+    const history = formatDialogueHistory(state, HERO_IDS[heroIndex]);
     const user = [
         ...formatMemory(state, HERO_IDS[heroIndex]),
         '### РАЗГОВОР',
@@ -74,4 +78,48 @@ export function buildDialoguePrompt({ state, heroIndex, card, language }) {
         { role: 'system', content: system.join('\n') },
         { role: 'user', content: user.join('\n') },
     ];
+}
+
+/**
+ * Разговор глазами viewer: последние ходы после сжатой памяти. Мысли не выводятся ничьи.
+ * Ходы старого формата (speech/intent, сыгранные до этапа 10) и ходы мастера (режим переключали из RPG) тоже показываются.
+ * @param {object} state
+ * @param {'hero1'|'hero2'} viewer
+ */
+export function formatDialogueHistory(state, viewer) {
+    const upTo = state.memory?.upTo ?? 0;
+    return state.turns.filter((turn) => turn.n > upTo).slice(-HISTORY_LIMIT).map((turn) => {
+        if (turn.author === 'master') return `Мастер: ${turn.text}`;
+        const name = state.heroes[HERO_IDS.indexOf(turn.author)]?.name ?? turn.author;
+        const label = viewer === turn.author ? `Ты (${name})` : name;
+        return `${label}: ${turn.text ?? legacyText(turn)}`;
+    }).join('\n\n');
+}
+
+function legacyText({ speech, intent }) {
+    const parts = [];
+    if (speech) parts.push(`«${speech}»`);
+    if (intent) parts.push(`*${intent}*`);
+    return parts.join(' ') || '(молчит)';
+}
+
+/**
+ * Ответ персонажа → текст сообщения. Снимает своё имя в начале и обрезает то, что модель начала писать за собеседника.
+ * @param {string} raw
+ * @param {{name: string, otherName: string}} names
+ * @returns {{text: string}}
+ */
+export function parseDialogueResponse(raw, { name, otherName }) {
+    let text = String(raw ?? '').replace(/\r\n/g, '\n').trim();
+    text = text.replace(new RegExp(`^\\*{0,2}${escapeRegExp(name)}\\*{0,2}\\s*:\\*{0,2}\\s*`, 'i'), '').trim();
+    const foreign = new RegExp(`^\\s*\\*{0,2}${escapeRegExp(otherName)}\\*{0,2}\\s*:`, 'i');
+    const lines = text.split('\n');
+    const cut = lines.findIndex((line) => foreign.test(line));
+    if (cut !== -1) text = lines.slice(0, cut).join('\n').trim();
+    if (!text) throw new ParseError('Пустой ответ персонажа', raw);
+    return { text };
+}
+
+function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
