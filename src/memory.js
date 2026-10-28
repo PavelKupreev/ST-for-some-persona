@@ -2,11 +2,12 @@
 // Модуль без зависимостей от ST, проверяется тестом в Node. Вызов модели — в game.js.
 //
 // Изоляция (NFR-01) держится так же, как в промптах: пересказ собирается только из того, что можно показать.
-//   public          — общая память: реплики, действия, ответы мастера, броски, без чьих-либо мыслей. Видят все.
-//   thoughts.hero1  — пересказ мыслей героя 1. Видят только герой 1 и мастер.
-//   thoughts.hero2  — то же для героя 2.
+//   groups.A        — общая память группы A: реплики, действия, ответы мастера, броски, без чьих-либо мыслей.
+//                     Видят герои группы и мастер (FR-34). В чатах до этапа 13 — поле public, это память группы A.
+//   thoughts.heroN  — пересказ мыслей героя N. Видят только герой N и мастер.
 
-import { HERO_IDS, formatTurns, languageRule } from './prompts.js';
+import { DEFAULT_GROUP, GROUPS, heroId, heroIndex, turnGroup } from './heroes.js';
+import { formatTurns, groupMemories, languageRule } from './prompts.js';
 
 // Сколько последних ходов остаётся в истории целиком после сжатия: не больше 10 и не больше половины порога,
 // иначе при пороге около 10 сжатие запускалось бы на каждом ходе (приёмка, PLAN 8.4).
@@ -19,14 +20,22 @@ export function keepAfterCompress(threshold) {
 export const SUMMARY_MAX_WORDS = 250;
 
 export function emptyMemory() {
-    return { upTo: 0, public: '', thoughts: { hero1: '', hero2: '' } };
+    return { upTo: 0, groups: {}, thoughts: {} };
 }
 
-/** Память чата; в старых чатах её нет. */
+/** Память чата; в старых чатах её нет или она одна на всех (public). */
 export function getMemory(state) {
     if (!state.memory) state.memory = emptyMemory();
-    state.memory.thoughts ??= { hero1: '', hero2: '' };
-    return state.memory;
+    const memory = state.memory;
+    memory.thoughts ??= {};
+    memory.groups = groupMemories(memory);
+    delete memory.public;
+    return memory;
+}
+
+/** Ключ пересказа общей памяти группы: public для A (как до этапа 13), public:B для остальных. */
+export function publicKey(group) {
+    return group === DEFAULT_GROUP ? 'public' : `public:${group}`;
 }
 
 /** Ходы, которые ещё не попали в память. */
@@ -54,22 +63,26 @@ export function turnsToCompress(state, threshold) {
  * @param {object} params.state
  * @param {object[]} params.turns ходы, которые сжимаем
  * @param {string} params.language
- * @returns {Array<{key: 'public'|'hero1'|'hero2', messages: Array<{role: string, content: string}>}>}
+ * @returns {Array<{key: string, messages: Array<{role: string, content: string}>}>} key — public, public:B или heroN
  */
 export function buildSummaryPrompts({ state, turns, language }) {
     const memory = getMemory(state);
-    const prompts = [{
-        key: 'public',
-        messages: summaryMessages({
-            language,
-            what: 'общую память ролевой игры: события, решения, найденное и потерянное, NPC и их отношение к героям, раны, обещания и незакрытые нити сюжета',
-            previous: memory.public,
-            fresh: formatTurns(state, turns, { viewer: 'public' }),
-        }),
-    }];
+    // Общая память — отдельно по каждой группе: в пересказ группы попадают только её ходы (FR-34).
+    const prompts = GROUPS
+        .map((group) => ({ group, groupTurns: turns.filter((turn) => turnGroup(turn) === group) }))
+        .filter(({ groupTurns }) => groupTurns.length)
+        .map(({ group, groupTurns }) => ({
+            key: publicKey(group),
+            messages: summaryMessages({
+                language,
+                what: 'общую память ролевой игры: события, решения, найденное и потерянное, NPC и их отношение к героям, раны, обещания и незакрытые нити сюжета',
+                previous: memory.groups[group],
+                fresh: formatTurns(state, groupTurns, { viewer: 'public' }),
+            }),
+        }));
 
-    HERO_IDS.forEach((id, index) => {
-        const hero = state.heroes[index];
+    state.heroes.forEach((hero, index) => {
+        const id = heroId(index);
         const fresh = turns
             .filter((turn) => turn.author === id && turn.thoughts)
             .map((turn) => `Ход ${turn.n}. Сказал: ${turn.speech || '—'}. Делал: ${turn.intent || '—'}. Думал: ${turn.thoughts}`)
@@ -114,9 +127,11 @@ function summaryMessages({ language, what, previous, fresh }) {
  */
 export function applySummaries(state, turns, summaries) {
     const memory = getMemory(state);
-    if (summaries.public !== undefined) memory.public = summaries.public.trim();
-    for (const id of HERO_IDS) {
-        if (summaries[id] !== undefined) memory.thoughts[id] = summaries[id].trim();
+    for (const [key, text] of Object.entries(summaries)) {
+        if (text === undefined) continue;
+        if (key === 'public') memory.groups[DEFAULT_GROUP] = text.trim();
+        else if (key.startsWith('public:') && GROUPS.includes(key.slice(7))) memory.groups[key.slice(7)] = text.trim();
+        else if (heroIndex(key) !== -1) memory.thoughts[key] = text.trim();
     }
     memory.upTo = Math.max(memory.upTo, ...turns.map((turn) => turn.n));
     return memory;

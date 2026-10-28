@@ -6,6 +6,7 @@
 // Этап 5: вмешательство — тайная микроцель герою и записка мастеру (src/intervention.js).
 // Этап 7: страница игры с вкладками (src/page.js), Историк и летопись (src/historian.js).
 // Этап 9: меню и кнопки управления над строкой ввода (src/dock.js), страница игры в отдельной вкладке браузера.
+// Этапы 11–14: до 10 персонажей, режимы игры, группы (src/heroes.js, src/modes.js), игра за персонажа (src/player.js).
 
 import { LOG_PREFIX } from './src/constants.js';
 import { getSettings, updateSettings } from './src/settings.js';
@@ -20,6 +21,7 @@ import { bindChronicle, renderChronicle } from './src/historian.js';
 import { clearPromptLog, promptLogSize, promptLogText } from './src/logger.js';
 import { $$, downloadFile } from './src/dom.js';
 import { bindDock, renderDock } from './src/dock.js';
+import { bindPlayer } from './src/player.js';
 
 const PING_MESSAGES = [
     { role: 'system', content: 'Ты помогаешь проверить подключение. Отвечай одной короткой фразой на русском.' },
@@ -42,6 +44,12 @@ function bindSettings() {
     });
     $$('#rpga_hero_model').val(settings.heroModel).on('input', function () {
         updateSettings({ heroModel: String($(this).val()).trim() });
+    });
+    $$('#rpga_romance_master_model').val(settings.romanceMasterModel).on('input', function () {
+        updateSettings({ romanceMasterModel: String($(this).val()).trim() });
+    });
+    $$('#rpga_romance_hero_model').val(settings.romanceHeroModel).on('input', function () {
+        updateSettings({ romanceHeroModel: String($(this).val()).trim() });
     });
     $$('#rpga_language').val(settings.language).on('input', function () {
         updateSettings({ language: String($(this).val()).trim() || 'русский' });
@@ -209,6 +217,7 @@ jQuery(async () => {
 
         bindChronicle((selector, handler) => bindButton(selector, handler, (text) => $$('#rpga_chronicle_status').text(text)));
         bindDock();
+        bindPlayer();
 
         renderSession();
         renderChronicle();

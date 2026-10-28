@@ -23,10 +23,13 @@
                     <div id="rpga_start_block" class="rpga-section">
                         <label for="rpga_mode">Режим</label>
                         <select id="rpga_mode" class="text_pole">
-                            <option value="rpg">RPG: мастер, кубики, HP, летопись</option>
-                            <option value="dialogue">Простой диалог: два персонажа просто разговаривают</option>
+                            <option value="free">Без мастера: персонажи просто общаются</option>
+                            <option value="adventure">Приключение: мастер, кубики 5e, HP, летопись</option>
+                            <option value="romance">Романтика 18+: мастер-рассказчик, отношения, без кубиков</option>
                         </select>
-                        <small class="rpga-dialogue-only">Без мастера, кубиков и листов: персонажи по очереди отвечают друг другу обычными сообщениями — речь, действия, описание. Ход — одно сообщение.</small>
+                        <small id="rpga_mode_hint"></small>
+                        <label for="rpga_hero_count">Число персонажей</label>
+                        <input id="rpga_hero_count" class="text_pole rpga-count" type="number" min="1" max="10" step="1">
 
                         <div class="rpga-section rpga-rpg-only">
                         <b>1. Мир</b>
@@ -50,10 +53,11 @@
                         </div>
 
                         <b id="rpga_heroes_title">2. Герои</b>
-                        <small>Отметьте ровно две карточки. Первая отмеченная станет первой: она начинает.</small>
+                        <small>Отметьте столько карточек, сколько задано в «Числе персонажей». Порядок отметки — порядок героев: первый начинает.</small>
                         <small id="rpga_pick_count"></small>
                         <input id="rpga_card_filter" class="text_pole" type="search" placeholder="Поиск карточки">
                         <div id="rpga_card_list" class="rpga-card-list"></div>
+                        <div id="rpga_roster" class="rpga-section rpga-roster"></div>
                         <div class="rpga-buttons rpga-rpg-only">
                             <div id="rpga_heroes_generate" class="menu_button">Сгенерировать</div>
                             <div id="rpga_heroes_manual" class="menu_button">Заполнить вручную</div>
@@ -118,6 +122,12 @@
                     <label for="rpga_hero_model">Модель героев (B)</label>
                     <input id="rpga_hero_model" class="text_pole" type="text" placeholder="openai/gpt-4o-mini">
 
+                    <label for="rpga_romance_master_model">Модель мастера для «Романтики 18+»</label>
+                    <input id="rpga_romance_master_model" class="text_pole" type="text" placeholder="пусто — модель мастера (A)">
+                    <label for="rpga_romance_hero_model">Модель героев для «Романтики 18+»</label>
+                    <input id="rpga_romance_hero_model" class="text_pole" type="text" placeholder="пусто — модель героев (B)">
+                    <small>Многие модели отказываются писать откровенные сцены: здесь можно задать другие, только для этого режима. Историк в «Романтике» тоже пишет на модели мастера романтики.</small>
+
                     <label for="rpga_language">Язык игры</label>
                     <input id="rpga_language" class="text_pole" type="text" list="rpga_language_list" placeholder="русский">
                     <datalist id="rpga_language_list">
@@ -140,7 +150,7 @@
                         <option value="knockout">Без смерти: отключка минимум на игровые сутки</option>
                         <option value="death">Со смертью: герой погибает навсегда</option>
                     </select>
-                    <small>Без смерти герой не ходит, пока по игровому времени не пройдут сутки (время двигает мастер), лечение раньше не будит. Со смертью павший герой больше не ходит, а если пали оба, сессия останавливается. Новая сцена возвращает всех в строй.</small>
+                    <small>Без смерти герой не ходит, пока по игровому времени не пройдут сутки (время двигает мастер), лечение раньше не будит. Со смертью павший герой больше не ходит, а если пали все, сессия останавливается. Новая сцена возвращает всех в строй.</small>
 
                     <b>Параметры автосессии</b>
                     <div class="rpga-settings-grid">
@@ -163,7 +173,7 @@
                             <input id="rpga_memory_threshold" class="text_pole" type="number" min="0" max="200" step="5">
                         </label>
                     </div>
-                    <small>Ход — реплика одного участника: мастера или героя. Случайность заменяет выбор мастера случайным. Частота проверок — доля действий героев, которые мастер проверяет броском d20: 0 — без кубиков, 100 — каждое действие. Герой, молчащий столько ходов, ходит обязательно (0 — выключено). Когда несжатых ходов больше порога сжатия, все, кроме последних 10 (при пороге меньше 20 — кроме последней половины порога), мастер-модель пересказывает в скрытую память (0 — не сжимать).</small>
+                    <small>Ход — реплика одного участника: мастера или героя. Случайность заменяет выбор мастера случайным. Частота проверок — доля действий героев, которые мастер проверяет броском d20: 0 — без кубиков, 100 — каждое действие. Герой, молчащий столько ходов, ходит обязательно (0 — выключено; при многих героях порог не меньше 2 × героев в строю − 1). Когда несжатых ходов больше порога сжатия, все, кроме последних 10 (при пороге меньше 20 — кроме последней половины порога), мастер-модель пересказывает в скрытую память (0 — не сжимать).</small>
                     <label class="checkbox_label" for="rpga_stop_scene_end">
                         <input id="rpga_stop_scene_end" type="checkbox">
                         <span>Стоп в конце сцены</span>

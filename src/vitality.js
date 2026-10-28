@@ -4,6 +4,8 @@
 // Время двигает мастер: в блоке [STATE {"time": 8}] он пишет, сколько игровых часов прошло.
 // Модуль без зависимостей от ST, проверяется тестом в Node.
 
+import { isFrozen } from './heroes.js';
+
 export const DEATH_MODES = ['knockout', 'death'];
 export const KNOCKOUT_HOURS = 24;
 // Больше за один блок не промотать: модель иногда путает часы с минутами.
@@ -20,13 +22,14 @@ export function heroCondition(hero) {
     return hero?.condition ?? 'ok';
 }
 
+/** Может ли герой ходить: в строю и не ушёл из сцены (FR-35). */
 export function isActive(hero) {
-    return heroCondition(hero) === 'ok';
+    return heroCondition(hero) === 'ok' && !isFrozen(hero);
 }
 
-/** Может ли герой ходить: по одному флагу на героя 1 и героя 2. */
+/** Может ли ходить каждый герой, по порядку. */
 export function activeHeroes(state) {
-    return [0, 1].map((index) => isActive(state.heroes[index]));
+    return state.heroes.map((hero) => isActive(hero));
 }
 
 /**
@@ -133,6 +136,7 @@ export function applyVitality(state, { hours = 0, mode = 'knockout' }) {
 /** Строка состояния героя для промпта мастера и панели. */
 export function conditionText(hero, clockHours = 0) {
     const condition = heroCondition(hero);
+    if (isFrozen(hero) && condition === 'ok') return 'ушёл из сцены, не действует, пока его не вернут';
     if (condition === 'dead') return 'погиб, больше не действует';
     if (condition === 'down') {
         const left = Math.max(0, Math.round(((hero.downUntil ?? 0) - clockHours) * 10) / 10);

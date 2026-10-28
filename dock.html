@@ -31,11 +31,18 @@
                 </div>
                 <small id="rpga_note_status" class="rpga-hint"></small>
             </div>
+            <div class="menu_button rpga-menu-item rpga-menu-toggle" data-form="rpga_player_form">🎭 Играть за…</div>
+            <div id="rpga_player_form" class="rpga-menu-form" hidden>
+                <select id="rpga_player_hero" class="text_pole"></select>
+                <small>Автосессия идёт сама до хода этого персонажа и ждёт вас. Ход пишется в обычное поле ввода ST: *курсив* — действие, остальное — речь. Другой выбор вернёт персонажа ИИ.</small>
+            </div>
+            <small id="rpga_player_status" class="rpga-hint"></small>
             <div id="rpga_session_output" class="rpga-output"></div>
         </div>
     </div>
     <div class="rpga-dock-right">
         <small id="rpga_session_status" class="rpga-session-status"></small>
+        <div id="rpga_player_send" class="menu_button rpga-dock-button rpga-player-send" hidden title="Отправить текст из поля ввода как ход вашего персонажа (или Enter)">✍️</div>
         <span class="rpga-dock-counter" title="Ходов осталось">
             <b id="rpga_turns_left">0</b><span id="rpga_turns_total"></span>
         </span>

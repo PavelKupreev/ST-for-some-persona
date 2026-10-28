@@ -3,6 +3,7 @@
 
 import { parseRollTags, stripRollTags } from './dice.js';
 import { extractStateChanges } from './heroState.js';
+import { normalizeGroup, resolveHero } from './heroes.js';
 
 export class ParseError extends Error {
     constructor(message, raw) {
@@ -54,6 +55,28 @@ export function parseHeroResponse(raw, { foreignNames = [] } = {}) {
     if (!result.speech && !result.intent) {
         throw new ParseError('Герой не дал ни реплики, ни намерения', raw);
     }
+    return result;
+}
+
+/**
+ * Ход игрока (FR-36): свободный текст из поля ввода ST. *Курсив* — действие, остальное — речь.
+ * @param {string} raw
+ * @returns {{speech: string, intent: string, thoughts: string}}
+ * @throws {ParseError} пустой ход
+ */
+export function parsePlayerText(raw) {
+    const text = String(raw ?? '').replace(/\r\n?/g, '\n').trim();
+    const actions = [];
+    const speech = text
+        .replace(/\*{1,2}([^*\n]+?)\*{1,2}/g, (_, action) => {
+            actions.push(action.trim());
+            return ' ';
+        })
+        .replace(/[ \t]+/g, ' ')
+        .replace(/ *\n */g, '\n')
+        .trim();
+    const result = { speech: cleanValue(speech), intent: actions.filter(Boolean).join(' '), thoughts: '' };
+    if (!result.speech && !result.intent) throw new ParseError('Пустой ход: напишите, что говорит или делает персонаж', raw);
     return result;
 }
 
@@ -117,7 +140,7 @@ function cleanValue(value) {
     return EMPTY_VALUES.has(result.toLowerCase()) ? '' : result;
 }
 
-// [NEXT: hero1], [NEXT hero2], [СЛЕДУЮЩИЙ: мастер], [NEXT: Арен]
+// [NEXT: hero1], [NEXT hero10], [СЛЕДУЮЩИЙ: мастер], [NEXT: Арен], [NEXT: master B] — мастер переходит к группе B (FR-34)
 const NEXT_TAG = /\[\s*(?:NEXT|СЛЕДУЮЩИЙ|ДАЛЕЕ)\s*[:=—–-]?\s*([^\]]*)\]/gi;
 // Без скобок, отдельной строкой: «NEXT: hero1», «**Следующий:** Лиа»
 const NEXT_LINE = /^[ \t*_]*(?:NEXT|СЛЕДУЮЩИЙ|ДАЛЕЕ)[ \t*_]*[:=—–-][ \t*_]*(.+?)[ \t*_]*$/gim;
@@ -128,10 +151,10 @@ const SCENE_END_TAG = /\[\s*(?:КОНЕЦ[\s_-]*СЦЕНЫ|СЦЕНА[\s_-]*ЗА
  * Разбирает ответ мастера: видимый текст, метки бросков и выбор следующего.
  * @param {string} raw
  * @param {object} [options]
- * @param {string[]} [options.heroNames] имена героя 1 и героя 2, чтобы понять «[NEXT: Арен]»
- * @returns {{text: string, next: 'hero1'|'hero2'|'master'|null, rolls: ReturnType<typeof parseRollTags>, sceneEnd: boolean,
+ * @param {string[]} [options.heroNames] имена героев по порядку, чтобы понять «[NEXT: Арен]»
+ * @returns {{text: string, next: string|null, nextGroup: string|null, rolls: ReturnType<typeof parseRollTags>, sceneEnd: boolean,
  *   changes: ReturnType<typeof extractStateChanges>['changes'], hours: number}} changes — изменения HP, статов и инвентаря (FR-15),
- *   hours — прошедшие игровые часы (PLAN 8.5)
+ *   hours — прошедшие игровые часы (PLAN 8.5); next — heroN или master; nextGroup — группа после «master» в [NEXT] (FR-34)
  */
 export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     const trimmed = String(raw ?? '').replace(/\r\n?/g, '\n').trim();
@@ -140,8 +163,12 @@ export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     const { text: source, changes, hours } = extractStateChanges(trimmed, heroNames);
 
     let next = null;
+    let nextGroup = null;
     for (const match of [...source.matchAll(NEXT_TAG), ...source.matchAll(NEXT_LINE)]) {
-        next = normalizeNext(match[1], heroNames) ?? next;
+        const found = normalizeNext(match[1], heroNames);
+        if (!found) continue;
+        next = found;
+        nextGroup = found === 'master' ? masterGroup(match[1]) : null;
     }
 
     const rolls = parseRollTags(source);
@@ -155,7 +182,7 @@ export function parseMasterResponse(raw, { heroNames = [] } = {}) {
     text = dropSpeakerLines(text, heroNames);
     if (!text) throw new ParseError('В ответе мастера нет текста, только служебные метки', raw);
 
-    return { text, next, rolls, sceneEnd, changes, hours };
+    return { text, next, nextGroup, rolls, sceneEnd, changes, hours };
 }
 
 function dropSpeakerLines(text, names) {
@@ -169,15 +196,19 @@ function dropSpeakerLines(text, names) {
 }
 
 /**
- * Приводит «hero1», «Герой 2», «мастер» или имя героя к hero1 / hero2 / master.
- * @returns {'hero1'|'hero2'|'master'|null}
+ * Приводит «hero1», «Герой 10», «мастер» или имя героя к heroN / master.
+ * @returns {string|null}
  */
 export function normalizeNext(value, heroNames = []) {
     const v = String(value ?? '').toLowerCase().replace(/[*_`"«»]/g, '').trim();
     if (!v) return null;
-    if (/hero\s*1|герой\s*1/.test(v)) return 'hero1';
-    if (/hero\s*2|герой\s*2/.test(v)) return 'hero2';
+    if (/(?:hero|герой|героиня)\s*[#№]?\s*\d/.test(v)) return resolveHero(v, heroNames);
     if (/master|мастер|\bdm\b/.test(v)) return 'master';
-    const index = heroNames.findIndex((name) => name && v.includes(name.toLowerCase()));
-    return index === 0 ? 'hero1' : index === 1 ? 'hero2' : null;
+    return resolveHero(v, heroNames);
+}
+
+// «master B», «мастер: группа В», «Master (B)» → B; просто «master» → null.
+function masterGroup(value) {
+    const rest = String(value ?? '').replace(/[*_`"«»()[\]]/g, ' ').replace(/^.*?(?:master|мастер|\bdm\b)/i, '');
+    return normalizeGroup(rest.replace(/^[\s:,—–-]+/, '').trim());
 }

@@ -6,11 +6,13 @@
 import { LOG_PREFIX } from './constants.js';
 import { getSettings } from './settings.js';
 import { getState, saveState } from './state.js';
-import { postSystemNote } from './chat.js';
+import { postAsMaster, postSystemNote } from './chat.js';
 import { STATS, abilityModifier } from './dice.js';
 import { ABILITY_MAX_LEVEL, LEVEL_AT, progressText, usesToNext } from './abilities.js';
 import { playStep } from './game.js';
-import { HERO_IDS } from './prompts.js';
+import { GROUPS, heroById, heroGroup, heroId, hasManyGroups, isFrozen, moveHero } from './heroes.js';
+import { isRomance } from './modes.js';
+import { renderPlayer } from './player.js';
 import { readyProblems, refreshButtons, resetScene } from './startPanel.js';
 import { isDialogue } from './dialogue.js';
 import { renderIntervention } from './intervention.js';
@@ -64,7 +66,7 @@ async function startSession() {
     await runLoop(state);
 }
 
-async function continueSession() {
+export async function continueSession() {
     const state = requireState();
     normalizeStatus(state);
     if (state.session.status !== 'paused') return;
@@ -129,6 +131,18 @@ async function runLoop(state) {
             }
 
             if (step.author !== 'none') state.session.turnsLeft = Math.max(0, state.session.turnsLeft - 1);
+            // Очередь игрока (FR-36): ждём его хода, после него сессия пойдёт дальше сама.
+            if (step.playerTurn) {
+                state.session.resumeAfterPlayer = true;
+                sessionOutput(step.report);
+                await halt(state, 'paused', `ваш ход за ${step.playerName}`, { player: true });
+                return;
+            }
+            if (step.halt) {
+                sessionOutput(step.report);
+                await halt(state, 'paused', step.halt);
+                return;
+            }
             if (step.allDead) {
                 await saveState();
                 sessionOutput(step.report);
@@ -169,10 +183,14 @@ function sleep(ms) {
     });
 }
 
-async function halt(state, status, reason, { error = false } = {}) {
+async function halt(state, status, reason, { error = false, player = false } = {}) {
     state.session.status = status;
     state.session.reason = reason;
     await saveState();
+    if (player) {
+        toastr.info(`${reason[0].toUpperCase()}${reason.slice(1)}: напишите ход в поле ввода ST и нажмите «✍️ Сходить» или Enter`, 'RPG-автосессия');
+        return;
+    }
 
     const icon = error ? '⚠️' : status === 'stopped' ? '⏹' : '⏸';
     const title = status === 'stopped' ? 'Автосессия остановлена' : 'Автосессия на паузе';
@@ -211,9 +229,9 @@ export function renderSession() {
     let statusText = STATUS_TEXT[status] ?? status;
     if (running && loop?.request) statusText = loop.request === 'stopped' ? 'Останавливается после текущего хода…' : 'Пауза после текущего хода…';
     else if (reason && !running) statusText += `: ${reason}`;
-    if (state.turns.length && status !== 'stopped') {
-        const index = HERO_IDS.indexOf(state.session.next);
-        statusText += ` · следующий: ${index === -1 ? 'Мастер' : state.heroes[index]?.name ?? '?'}`;
+    if (state.turns.length && status !== 'stopped' && !state.session.awaitingPlayer) {
+        const hero = heroById(state, state.session.next);
+        statusText += ` · следующий: ${hero ? hero.name : hasManyGroups(state) ? `Мастер (группа ${state.session.focus})` : 'Мастер'}`;
     }
     $$('#rpga_session_status').text(statusText).attr('data-status', status);
     $$('#rpga_page_session').text(`${statusText} · ходов ${status === 'idle' ? getSettings().maxTurns : turnsLeft}/${getSettings().maxTurns}`).attr('data-status', status);
@@ -230,28 +248,57 @@ export function renderSession() {
 
     renderHeroCards(state);
     renderIntervention(state);
+    renderPlayer(state);
 }
 
 // Вкладка «Персонажи» на странице игры (этап 9): профиль героя целиком — видит только пользователь.
+// Этап 11–14: до 10 героев, профили по группам, переход между группами и отметка игрока.
 function renderHeroCards(state) {
     const box = $$('#rpga_hero_cards').empty();
-    const empty = isDialogue(state) ? 'Выберите две карточки во вкладке «Игра».' : 'Герои ещё не готовы: выберите две карточки и создайте листы во вкладке «Игра».';
-    $$('#rpga_heroes_empty').text(state.heroes.length === 2 ? '' : empty);
-    if (state.heroes.length !== 2) return;
+    const empty = isDialogue(state) ? 'Выберите карточки во вкладке «Игра».' : 'Герои ещё не готовы: выберите карточки и создайте листы во вкладке «Игра».';
+    $$('#rpga_heroes_empty').text(state.heroes.length ? '' : empty);
+    if (!state.heroes.length) return;
     const clock = state.clock?.hours ?? 0;
     const profile = isDialogue(state) ? dialogueProfile : heroProfile;
-    state.heroes.forEach((hero, index) => box.append(profile(state, hero, index, clock)));
+    if (!hasManyGroups(state)) {
+        state.heroes.forEach((hero, index) => box.append(profile(state, hero, index, clock)));
+        return;
+    }
+    for (const group of [...GROUPS, null]) {
+        const members = state.heroes.map((hero, index) => ({ hero, index })).filter(({ hero }) => heroGroup(hero) === group);
+        if (!members.length) continue;
+        box.append($('<h4 class="rpga-group-title">').text(group ? `Группа ${group}` : 'Вне сцены'));
+        members.forEach(({ hero, index }) => box.append(profile(state, hero, index, clock)));
+    }
 }
 
-// В простом диалоге у персонажа нет листа: только аватар, имя и последняя реплика.
+// Группа героя и переход (FR-34, FR-35): пользователь переводит героя прямо в идущей сцене.
+function groupControl(state, hero, index) {
+    const select = $('<select class="text_pole rpga-move-hero">').attr('data-hero', index).attr('title', 'Перевести в другую группу или увести из сцены');
+    for (const group of GROUPS) select.append($('<option>').val(group).text(`Группа ${group}`));
+    select.append($('<option>').val('').text('Вне сцены (заморожен)'));
+    select.val(heroGroup(hero) ?? '');
+    return $('<label class="rpga-profile-group">').append($('<span>').text('Где: ')).append(select);
+}
+
+function badges(state, hero, index) {
+    const parts = [];
+    if (state.session.player === heroId(index)) parts.push('🎭 вы');
+    if (isFrozen(hero)) parts.push('🚪 вне сцены');
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
+// Без мастера у персонажа нет листа: только аватар, имя и последняя реплика.
 function dialogueProfile(state, hero, index) {
+    const id = heroId(index);
     const card = $('<article class="rpga-profile">');
     card.append($('<header class="rpga-profile-head">')
         .append($('<img class="rpga-profile-avatar" alt="">').attr('src', avatarUrl(hero)))
         .append($('<div class="rpga-profile-title">')
             .append($('<h3>').text(hero.name))
-            .append($('<small>').text(`Собеседник ${index + 1} · реплик: ${state.turns.filter((turn) => turn.author === HERO_IDS[index]).length}`))));
-    const last = state.turns.findLast((turn) => turn.author === HERO_IDS[index] && turn.text)?.text;
+            .append($('<small>').text(`Собеседник ${index + 1} · реплик: ${state.turns.filter((turn) => turn.author === id).length}${badges(state, hero, index)}`))));
+    card.append(groupControl(state, hero, index));
+    const last = state.turns.findLast((turn) => turn.author === id && turn.text)?.text;
     if (last) {
         card.append($('<details class="rpga-profile-thoughts">')
             .append($('<summary>').text('💬 Последняя реплика'))
@@ -260,7 +307,43 @@ function dialogueProfile(state, hero, index) {
     return card;
 }
 
+// Романтика (FR-37): без статов, HP и способностей; желания и отношения.
+function romanceProfile(state, hero, index) {
+    const card = $('<article class="rpga-profile">').attr('data-condition', isFrozen(hero) ? 'away' : 'ok');
+    card.append($('<header class="rpga-profile-head">')
+        .append($('<img class="rpga-profile-avatar" alt="">').attr('src', avatarUrl(hero)))
+        .append($('<div class="rpga-profile-title">')
+            .append($('<h3>').text(hero.name))
+            .append($('<small>').text(`Герой ${index + 1}${badges(state, hero, index)}`))));
+    card.append(groupControl(state, hero, index));
+    const relations = Object.entries(hero.relations ?? {}).filter(([, text]) => text);
+    const list = $('<div class="rpga-profile-goals">').append($('<h4>').text('💞 Отношения'));
+    if (relations.length) relations.forEach(([name, text]) => list.append($('<p>').append($('<b>').text(`${name}: `)).append(document.createTextNode(text))));
+    else list.append($('<p>').text('—'));
+    card.append(list);
+    if (hero.inventory?.length) {
+        const chips = $('<div class="rpga-chips">');
+        hero.inventory.forEach((item) => chips.append($('<span class="rpga-chip">').text(item)));
+        card.append($('<div class="rpga-profile-inventory">').append($('<h4>').text('👜 При себе')).append(chips));
+    }
+    card.append($('<div class="rpga-profile-goals">')
+        .append($('<p>').append($('<b>').text('🌟 Желание: ')).append(document.createTextNode(hero.globalGoal || '—')))
+        .append($('<p>').attr('title', 'Видят только этот герой и мастер').append($('<b>').text('🎯 Тайное желание: ')).append(document.createTextNode(hero.microGoal || '—'))));
+    appendThoughts(card, state, index);
+    return card;
+}
+
+function appendThoughts(card, state, index) {
+    const thoughts = state.turns.findLast((turn) => turn.author === heroId(index) && turn.thoughts)?.thoughts;
+    if (thoughts) {
+        card.append($('<details class="rpga-profile-thoughts">')
+            .append($('<summary>').text('💭 Последние мысли'))
+            .append($('<p>').text(thoughts)));
+    }
+}
+
 function heroProfile(state, hero, index, clock) {
+    if (isRomance(state)) return romanceProfile(state, hero, index);
     const { current, max } = hero.hp;
     const percent = max > 0 ? Math.max(0, Math.min(100, Math.round((current / max) * 100))) : 0;
     const condition = heroCondition(hero);
@@ -272,11 +355,12 @@ function heroProfile(state, hero, index, clock) {
         .append(avatar)
         .append($('<div class="rpga-profile-title">')
             .append($('<h3>').text(hero.name))
-            .append($('<small>').text(`Герой ${index + 1} · ${badge}`).attr('title', conditionText(hero, clock)))
+            .append($('<small>').text(`Герой ${index + 1} · ${badge}${badges(state, hero, index)}`).attr('title', conditionText(hero, clock)))
             .append($('<div class="rpga-hp-bar rpga-hp-big">')
                 .append($('<div class="rpga-hp-fill">').css('width', `${percent}%`))
                 .append($('<span class="rpga-hp-label">').text(`HP ${current} / ${max}`)))));
     if (condition !== 'ok') card.append($('<small class="rpga-condition-line">').text(conditionText(hero, clock)));
+    card.append(groupControl(state, hero, index));
 
     const stats = $('<div class="rpga-profile-stats">');
     for (const stat of STATS) {
@@ -314,13 +398,42 @@ function heroProfile(state, hero, index, clock) {
         .append($('<p>').append($('<b>').text('🌟 Цель: ')).append(document.createTextNode(hero.globalGoal || '—')))
         .append($('<p>').attr('title', 'Видят только этот герой и мастер').append($('<b>').text('🎯 Микроцель (тайная): ')).append(document.createTextNode(hero.microGoal || '—'))));
 
-    const thoughts = state.turns.findLast((turn) => turn.author === HERO_IDS[index] && turn.thoughts)?.thoughts;
-    if (thoughts) {
-        card.append($('<details class="rpga-profile-thoughts">')
-            .append($('<summary>').text('💭 Последние мысли'))
-            .append($('<p>').text(thoughts)));
-    }
+    appendThoughts(card, state, index);
     return card;
+}
+
+/**
+ * Пользователь переводит героя (FR-35): до начала сцены — меняет стартовую группу, в идущей сцене — переход
+ * с этого хода (служебная строка в чате; мастер видит новые группы в своём промпте).
+ */
+async function onMoveHero() {
+    const state = getState();
+    if (!state) return;
+    const index = Number($(this).data('hero'));
+    const hero = state.heroes[index];
+    const group = String($(this).val()) || null;
+    if (!hero) return;
+    if (!state.turns.length) {
+        if (!group) {
+            $(this).val(heroGroup(hero) ?? '');
+            toastr.warning('Сцена ещё не началась: увести из сцены можно, когда она идёт', 'RPG-автосессия');
+            return;
+        }
+        hero.homeGroup = group;
+        hero.group = group;
+        delete hero.presence;
+        state.setup.groups = { ...(state.setup.groups ?? {}), [hero.cardAvatar]: group };
+    } else {
+        const was = heroGroup(hero);
+        if (!moveHero(hero, group, state.turns.length)) return;
+        const line = !group ? `🚪 ${hero.name} уходит из сцены (решение пользователя)`
+            : !was ? `↩️ ${hero.name} возвращается в сцену (группа ${group}, решение пользователя)`
+                : `➡️ ${hero.name} переходит в группу ${group} (решение пользователя)`;
+        await postAsMaster(`📋 ${line}`, { kind: 'state', turn: state.turns.length });
+    }
+    await saveState();
+    renderSession();
+    refreshButtons();
 }
 
 function avatarUrl(hero) {
@@ -342,6 +455,9 @@ export function bindSession(bindButton) {
     // Пауза и Стоп должны срабатывать, пока «Старт» или «Продолжить» ждут конца цикла, поэтому без общей блокировки.
     $$('#rpga_session_pause').on('click', () => !$$('#rpga_session_pause').hasClass('rpga-off') && pauseSession().catch(showError));
     $$('#rpga_session_stop').on('click', () => !$$('#rpga_session_stop').hasClass('rpga-off') && stopSession().catch(showError));
+    $$('#rpga_hero_cards').on('change', '.rpga-move-hero', function () {
+        onMoveHero.call(this).catch(showError);
+    });
 }
 
 function showError(error) {

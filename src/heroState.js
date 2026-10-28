@@ -4,11 +4,14 @@
 //
 // Формат: [STATE {"hero1": {"hp": -5, "stats": {"DEX": -1}, "add": ["ключ"], "remove": ["факел"], "use": ["Огненный шар"]}}]
 // hp и stats — изменения (дельты), а не новые значения. use — применённые без броска способности (PLAN 6.4).
-// Вместо hero1/hero2 можно имя героя. Ключ "time" рядом с героями — сколько игровых часов прошло (PLAN 8.5).
+// Вместо heroN можно имя героя. Ключ "time" рядом с героями — сколько игровых часов прошло (PLAN 8.5).
+// Этап 12–13: "relations" — отношения к другим героям в «Романтике» (FR-37), "group" и "leave" — переход в другую
+// группу и уход из сцены (FR-35); их применяет вызывающий код (game.js), здесь они только разбираются.
 
 import { STATS, normalizeStat } from './dice.js';
 import { findAbility, useAbility } from './abilities.js';
 import { parseHours } from './vitality.js';
+import { heroIndex, normalizeGroup, resolveHero } from './heroes.js';
 
 const TIME_KEYS = ['time', 'время', 'hours', 'часы', 'прошло', 'elapsed'];
 
@@ -23,8 +26,9 @@ const FENCED_JSON = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/gi;
 /**
  * Достаёт блоки изменений из ответа мастера.
  * @param {string} text ответ мастера
- * @param {string[]} heroNames имена героя 1 и героя 2
- * @returns {{text: string, changes: Array<{hero: 'hero1'|'hero2', hp: number, stats: Record<string, number>, add: string[], remove: string[], use: string[]}>, hours: number}}
+ * @param {string[]} heroNames имена героев по порядку
+ * @returns {{text: string, changes: Array<{hero: string, hp: number, stats: Record<string, number>, add: string[], remove: string[], use: string[],
+ *   relations: Record<string, string>, group: string|null, leave: boolean}>, hours: number}} relations — имя героя → отношение
  *   text — ответ без блоков; блок, который не удалось разобрать, тоже вырезается, чтобы JSON не попал в чат;
  *   hours — сколько игровых часов прошло по ключу «time»
  */
@@ -85,7 +89,7 @@ function timeOf(json) {
 export function applyStateChanges(heroes, changes, { skipUses = [] } = {}) {
     const lines = [];
     for (const change of changes) {
-        const hero = heroes[change.hero === 'hero2' ? 1 : 0];
+        const hero = heroes[heroIndex(change.hero)];
         // Погибшего героя не лечат и не меняют (PLAN 8.5).
         if (!hero || hero.condition === 'dead') continue;
         const parts = [];
@@ -126,6 +130,13 @@ export function applyStateChanges(heroes, changes, { skipUses = [] } = {}) {
             abilityLines.push(useAbility(hero, ability).line);
         }
 
+        hero.relations ??= {};
+        for (const [name, text] of Object.entries(change.relations ?? {})) {
+            if (name === hero.name || hero.relations[name] === text) continue;
+            hero.relations[name] = text;
+            parts.push(`к ${name}: ${text}`);
+        }
+
         if (parts.length) lines.push(`${hero.name}: ${parts.join(', ')}`);
         lines.push(...abilityLines);
     }
@@ -140,9 +151,9 @@ function normalizeChanges(json, heroNames) {
 
     const result = [];
     for (const [key, value] of Object.entries(json)) {
-        const hero = heroId(key, heroNames);
+        const hero = resolveHero(key, heroNames, { exact: true });
         if (!hero || !value || typeof value !== 'object') continue;
-        const change = { hero, hp: 0, stats: {}, add: [], remove: [], use: [] };
+        const change = { hero, hp: 0, stats: {}, add: [], remove: [], use: [], relations: {}, group: null, leave: false };
         for (const [field, raw] of Object.entries(value)) {
             const name = field.toLowerCase();
             if (['hp', 'хиты', 'хп', 'damage', 'урон', 'heal', 'лечение'].includes(name)) {
@@ -168,9 +179,20 @@ function normalizeChanges(json, heroNames) {
             } else if (['inventory', 'инвентарь'].includes(name) && raw && typeof raw === 'object' && !Array.isArray(raw)) {
                 change.add.push(...toList(raw.add ?? raw.добавить));
                 change.remove.push(...toList(raw.remove ?? raw.убрать));
+            } else if (['relations', 'relation', 'отношения', 'отношение'].includes(name) && raw && typeof raw === 'object' && !Array.isArray(raw)) {
+                for (const [other, text] of Object.entries(raw)) {
+                    const id = resolveHero(other, heroNames, { exact: true });
+                    const otherName = id ? heroNames[heroIndex(id)] : '';
+                    if (otherName && String(text ?? '').trim()) change.relations[otherName] = String(text).trim();
+                }
+            } else if (['group', 'группа', 'join', 'moveto', 'move_to'].includes(name)) {
+                change.group = normalizeGroup(raw) ?? change.group;
+            } else if (['leave', 'left', 'ушёл', 'ушел', 'уходит', 'exit'].includes(name)) {
+                change.leave = raw === true || /^(?:true|да|yes|1)$/i.test(String(raw));
             }
         }
-        if (change.hp || Object.keys(change.stats).length || change.add.length || change.remove.length || change.use.length) result.push(change);
+        if (change.hp || Object.keys(change.stats).length || change.add.length || change.remove.length || change.use.length
+            || Object.keys(change.relations).length || change.group || change.leave) result.push(change);
     }
     return result;
 }
@@ -188,16 +210,11 @@ function mergeChanges(changes) {
         target.add.push(...change.add);
         target.remove.push(...change.remove);
         target.use.push(...change.use);
+        Object.assign(target.relations, change.relations);
+        target.group = change.group ?? target.group;
+        target.leave = target.leave || change.leave;
     }
     return [...byHero.values()];
-}
-
-function heroId(key, heroNames) {
-    const v = String(key).toLowerCase().trim();
-    if (/^(?:hero\s*1|герой\s*1)$/.test(v)) return 'hero1';
-    if (/^(?:hero\s*2|герой\s*2)$/.test(v)) return 'hero2';
-    const index = heroNames.findIndex((name) => name && name.toLowerCase() === v);
-    return index === 0 ? 'hero1' : index === 1 ? 'hero2' : null;
 }
 
 // Индекс парной закрывающей скобки для { в позиции start, с учётом строк JSON.

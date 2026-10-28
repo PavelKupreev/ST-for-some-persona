@@ -715,3 +715,64 @@ body.rpga-window .rpga-page {
         grid-template-columns: repeat(3, 1fr);
     }
 }
+
+/* ---------- Этапы 11–14: число персонажей, группы, игра за персонажа ---------- */
+
+.rpga-page .rpga-count {
+    width: 5em;
+}
+
+.rpga-page .rpga-roster-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 0;
+}
+
+.rpga-page .rpga-roster-row select {
+    width: auto;
+    min-width: 6em;
+}
+
+.rpga-page .rpga-group-title {
+    grid-column: 1 / -1;
+    margin: 8px 0 0;
+    opacity: 0.8;
+}
+
+.rpga-page .rpga-profile-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9em;
+}
+
+.rpga-page .rpga-profile-group select {
+    width: auto;
+}
+
+/* Метка группы над сообщением в чате ST */
+.rpga-group-tag {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    opacity: 0.75;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+}
+
+.rpga-dock .rpga-player-send {
+    white-space: nowrap;
+    color: var(--SmartThemeQuoteColor, #e18a24);
+}
+
+/* Значок 🎲 мигает, пока автосессия ждёт хода игрока */
+.rpga-dock .rpga-dock-icon.rpga-dock-icon-waiting {
+    opacity: 1;
+    color: var(--SmartThemeQuoteColor, #e18a24);
+    animation: rpga-waiting 1.4s ease-in-out infinite;
+}
+
+@keyframes rpga-waiting {
+    50% { opacity: 0.45; }
+}

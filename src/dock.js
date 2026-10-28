@@ -1,5 +1,5 @@
 // Панель над строкой ввода ST (этап 9, FR-28): слева иконка 🎲 с меню (Старт, Стоп, Страница игры, Летопись,
-// Цель герою, Записка мастеру), справа счётчик ходов и кнопки «Один ход», «Продолжить», «Пауза».
+// Цель герою, Записка мастеру, Играть за…), справа счётчик ходов и кнопки «Сходить», «Один ход», «Продолжить», «Пауза».
 // Кнопки те же, что раньше были на панели расширений, с теми же id: обработчики подписаны в своих модулях.
 
 import { EXTENSION_ROOT } from './constants.js';
@@ -32,7 +32,7 @@ export function bindDock() {
         const open = form.prop('hidden');
         $('#rpga_menu .rpga-menu-form').prop('hidden', true);
         form.prop('hidden', !open);
-        if (open) form.find('textarea').trigger('focus');
+        if (open) form.find('textarea, select').first().trigger('focus');
     });
     // Разовые действия закрывают меню; поля вмешательства закрываются после отправки.
     $('#rpga_session_start, #rpga_session_stop, #rpga_open_page, #rpga_chronicle_write').on('click', function () {

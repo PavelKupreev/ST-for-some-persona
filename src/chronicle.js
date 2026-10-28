@@ -6,6 +6,8 @@
 // Летопись только дополняется (FR-24): главы не переписываются, новая глава — всегда в конец.
 
 import { formatCard, formatTurns, formatWorld, languageRule } from './prompts.js';
+import { hasManyGroups } from './heroes.js';
+import { ADULT_RULE, isRomance } from './modes.js';
 
 // Больше ходов в одну главу не берём: остаток уйдёт в следующую.
 export const CHAPTER_MAX_TURNS = 60;
@@ -100,7 +102,7 @@ export function unchronicledWarning(state) {
  * @param {object} params
  * @param {object} params.state
  * @param {object[]} params.turns ходы главы
- * @param {Array<import('./prompts.js').PromptCard|null>} params.cards карточки героя 1 и героя 2
+ * @param {Array<import('./prompts.js').PromptCard|null>} params.cards карточки героев по порядку
  * @param {string} params.language
  * @param {keyof typeof HISTORIAN_STYLES} [params.style] стиль письма из настроек
  * @returns {Array<{role: string, content: string}>}
@@ -108,17 +110,21 @@ export function unchronicledWarning(state) {
 export function buildHistorianPrompt({ state, turns, cards, language, style = DEFAULT_HISTORIAN_STYLE }) {
     const voice = HISTORIAN_STYLES[style] ?? HISTORIAN_STYLES[DEFAULT_HISTORIAN_STYLE];
     const names = state.heroes.map((hero) => hero.name);
+    const romance = isRomance(state);
+    const many = hasManyGroups(state);
     const chapterNumber = (state.chronicle?.length ?? 0) + 1;
     const previous = state.chronicle?.at(-1);
 
     const system = [
-        'Ты — Историк, летописец. Ты превращаешь записи настольной ролевой игры в главу художественной летописи о приключениях двух героев.',
+        `Ты — Историк, летописец. Ты превращаешь записи ${romance ? 'взрослой романтической истории' : 'настольной ролевой игры'} в главу художественной летописи о ${names.length === 1 ? 'герое' : names.length === 2 ? 'двух героях' : `героях (${names.length})`}.`,
+        ...(romance ? [ADULT_RULE] : []),
         languageRule(language),
         '',
         '### КАК ПИСАТЬ',
         ...voice.rules,
         '- Объясняй не только что произошло, но и зачем герои это делали и почему: опирайся на их мысли, глобальные цели и тайные микроцели.',
-        '  Читатель летописи видит мысли обоих героев и знает их тайны, даже если сами герои друг о друге этого не знают.',
+        '  Читатель летописи видит мысли всех героев и знает их тайны, даже если сами герои друг о друге этого не знают.',
+        ...(many ? ['- Герои разделены на группы в разных местах (метка [A], [B] у записей): веди их линии параллельно и ясно переходи между ними; герои одной группы не знают, что происходит в другой.'] : []),
         '- Никакой механики: не упоминай кубики, броски, DC, HP, статы, уровни и ходы. Удачу и неудачу показывай через события, раны — через боль и усталость.',
         '- Не выдумывай событий, решений и реплик, которых не было. Можно добавлять обстановку, ощущения и мелкие детали, не меняющие сюжета.',
         '- Без списков и подзаголовков внутри текста.',
@@ -136,10 +142,12 @@ export function buildHistorianPrompt({ state, turns, cards, language, style = DE
         '',
         ...state.heroes.flatMap((hero, index) => [
             `### ГЕРОЙ ${index + 1}: ${hero.name}`,
-            formatCard(cards?.[index] ?? null, hero.name, names[1 - index]),
+            formatCard(cards?.[index] ?? null, hero.name, names.find((name) => name !== hero.name) ?? 'собеседник'),
             `Глобальная цель: ${hero.globalGoal || '—'}`,
             `Тайная микроцель: ${hero.microGoal || '—'}`,
-            `Способности: ${(hero.abilities ?? []).filter((ability) => ability.name).map((ability) => ability.name).join(', ') || '—'}`,
+            romance
+                ? `Отношения: ${Object.entries(hero.relations ?? {}).map(([name, text]) => `${name} — ${text}`).join('; ') || '—'}`
+                : `Способности: ${(hero.abilities ?? []).filter((ability) => ability.name).map((ability) => ability.name).join(', ') || '—'}`,
             '',
         ]),
     ];
@@ -149,7 +157,7 @@ export function buildHistorianPrompt({ state, turns, cards, language, style = DE
     }
     user.push(
         `### ЗАПИСИ ИГРЫ (мысли героев видишь только ты и читатель)`,
-        formatTurns(state, turns, { viewer: 'master' }),
+        formatTurns(state, turns, { viewer: 'master', groups: many }),
         '',
         '### ЗАДАНИЕ',
         `Напиши главу ${chapterNumber} по этим записям.`,
@@ -241,7 +249,9 @@ export function chronicleMarkdown(state) {
 
 export function chronicleTitle(state) {
     const names = state.heroes.map((hero) => hero.name).filter(Boolean);
-    return names.length ? `Летопись: ${names.join(' и ')}` : 'Летопись';
+    if (!names.length) return 'Летопись';
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} и ${names.at(-1)}` : names[0];
+    return `Летопись: ${list}`;
 }
 
 /** Имя файла без символов, запрещённых в Windows. */

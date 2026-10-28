@@ -2,6 +2,7 @@
 // chatMetadata в ST заменяется целиком при смене чата, поэтому ссылку берём из getContext() при каждом обращении.
 
 import { EXTENSION_KEY, LOG_PREFIX, STATE_VERSION } from './constants.js';
+import { gameMode } from './modes.js';
 
 // Поля, которым не место в метаданных чата ни при каких условиях (NFR-04).
 const FORBIDDEN_KEYS = ['openrouterKey', 'apiKey', 'api_key'];
@@ -9,12 +10,14 @@ const FORBIDDEN_KEYS = ['openrouterKey', 'apiKey', 'api_key'];
 export function createEmptyState() {
     return {
         version: STATE_VERSION,
-        mode: 'rpg', // rpg — мастер, кубики, HP; dialogue — простой диалог двух персонажей (новое, PLAN 10.1)
+        mode: 'adventure', // free — без мастера, adventure — мастер и кубики 5e, romance — романтика 18+ (FR-33, src/modes.js)
         world: null,
         heroes: [],
         setup: {
             worldPrompt: '', // черновик промпта мира до «Расширить» (FR-01)
-            selected: [], // аватары выбранных карточек ST по порядку: герой 1, герой 2 (FR-03)
+            selected: [], // аватары выбранных карточек ST по порядку: герой 1, герой 2, … (FR-03)
+            count: 2, // сколько персонажей в игре, 1–10 (FR-03)
+            groups: {}, // аватар → стартовая группа A–E (FR-34)
         },
         scene: {
             premise: '',
@@ -30,7 +33,13 @@ export function createEmptyState() {
             reason: '', // почему сессия на паузе или остановлена (UC-05, FR-22)
             turnsLeft: 0, // сколько ходов осталось до лимита (FR-20)
             masterNote: '',
-            next: 'master', // кто ходит следующим: master / hero1 / hero2
+            next: 'master', // кто ходит следующим: master / hero1 … hero10
+            focus: 'A', // группа, которую сейчас ведёт мастер (FR-34)
+            cut: false, // мастер только что перешёл к группе focus: его ход начнётся с описания для неё
+            wanted: '', // герой, ради которого мастер перешёл к группе: ему передать ход
+            player: '', // за кого играет пользователь: heroN или пусто (FR-36)
+            awaitingPlayer: false, // сессия ждёт хода игрока
+            resumeAfterPlayer: false, // после хода игрока автосессия идёт дальше сама
             pendingOutcome: false, // броски сделаны, описание исхода ещё не получено
             rolledAbilities: [], // способности, прокачанные бросками этого хода: «hero1:Огненный шар» (PLAN 6.4)
         },
@@ -56,6 +65,8 @@ export function getState() {
         chatMetadata[EXTENSION_KEY] = createEmptyState();
     }
     const state = fillMissing(chatMetadata[EXTENSION_KEY], createEmptyState());
+    // Чаты до этапа 12: rpg → «Приключение», dialogue → «Без мастера».
+    state.mode = gameMode(state);
     // Чат с героями из версии до этапа 3: выбор карточек восстанавливаем по героям.
     if (!state.setup.selected.length && state.heroes.length) state.setup.selected = state.heroes.map((hero) => hero.cardAvatar);
     return state;

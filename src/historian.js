@@ -7,6 +7,7 @@ import { getSettings } from './settings.js';
 import { getState, saveState } from './state.js';
 import { callModel } from './llm.js';
 import { toPromptCard } from './game.js';
+import { modelsFor } from './modes.js';
 import {
     CHAPTER_MAX_TURNS, HISTORIAN_STYLES, appendChapter, buildHistorianPrompt, chapterHtml, chapterRange, chronicleCursor, chronicleMarkdown,
     exportFileName, parseChapter, pendingTurns, unchronicledCount,
@@ -29,7 +30,7 @@ let preview = null;
 function requireGame() {
     const state = getState();
     if (!state) throw new Error('Сначала откройте чат');
-    if (state.heroes.length !== 2) throw new Error('Нет героев: подготовьте мир и героев на странице игры');
+    if (!state.heroes.length) throw new Error('Нет героев: подготовьте мир и героев на странице игры');
     return state;
 }
 
@@ -51,7 +52,7 @@ async function runHistorian(state, turns) {
         const settings = getSettings();
         const raw = await callModel({
             role: 'historian',
-            model: settings.masterModel,
+            model: modelsFor(settings, state).master,
             messages: buildHistorianPrompt({ state, turns, cards: cards(state), language: settings.language, style: settings.historianStyle }),
             maxTokens: HISTORIAN_MAX_TOKENS,
             temperature: HISTORIAN_TEMPERATURE,

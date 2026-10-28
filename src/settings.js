@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     openrouterKey: '',
     masterModel: 'openai/gpt-4o',
     heroModel: 'openai/gpt-4o-mini',
+    romanceMasterModel: '', // модели для «Романтики 18+» (FR-29, FR-37); пусто — обычные модели
+    romanceHeroModel: '',
     language: 'русский',
     maxTurns: 20,
     randomness: 20,

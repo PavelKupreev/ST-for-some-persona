@@ -72,5 +72,5 @@ test('parseMasterResponse возвращает changes и не путает их
     assert.equal(parsed.text, 'Ловушка срабатывает.');
     assert.equal(parsed.next, 'hero2');
     assert.equal(parsed.rolls.length, 1);
-    assert.deepEqual(parsed.changes, [{ hero: 'hero1', hp: -3, stats: {}, add: [], remove: [], use: [] }]);
+    assert.deepEqual(parsed.changes, [{ hero: 'hero1', hp: -3, stats: {}, add: [], remove: [], use: [], relations: {}, group: null, leave: false }]);
 });

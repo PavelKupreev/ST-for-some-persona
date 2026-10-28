@@ -4,7 +4,7 @@
 
 import { LOG_PREFIX } from './constants.js';
 import { getState, saveState } from './state.js';
-import { HERO_IDS } from './prompts.js';
+import { heroId, heroIndex } from './heroes.js';
 import { $$ } from './dom.js';
 import { isDialogue } from './dialogue.js';
 
@@ -49,8 +49,8 @@ export function consumeMasterNote(session, sent) {
 
 /** Поля вмешательства: список героев, текущая записка. Вызывается из renderSession. */
 export function renderIntervention(state) {
-    // В простом диалоге (PLAN 10.1) мастера нет: ни записки, ни микроцели.
-    const ready = state.heroes.length === 2 && !isDialogue(state);
+    // Без мастера (PLAN 10.1, FR-33) нет ни записки, ни микроцели.
+    const ready = state.heroes.length > 0 && !isDialogue(state);
     $$('#rpga_intervene').toggle(ready);
     if (!ready) return;
 
@@ -61,8 +61,8 @@ export function renderIntervention(state) {
     if (select.find('option').map((_, option) => option.textContent).get().join('\n') !== names.join('\n')) {
         const chosen = select.val();
         select.empty();
-        names.forEach((name, index) => select.append($('<option>').val(HERO_IDS[index]).text(name)));
-        select.val(HERO_IDS.includes(chosen) ? chosen : HERO_IDS[0]);
+        names.forEach((name, index) => select.append($('<option>').val(heroId(index)).text(name)));
+        select.val(heroIndex(chosen) !== -1 && heroIndex(chosen) < names.length ? chosen : heroId(0));
     }
     showCurrentMicroGoal(state);
 
@@ -73,7 +73,7 @@ export function renderIntervention(state) {
 }
 
 function showCurrentMicroGoal(state) {
-    const hero = state.heroes[HERO_IDS.indexOf($$('#rpga_micro_hero').val())];
+    const hero = state.heroes[heroIndex($$('#rpga_micro_hero').val())];
     $$('#rpga_micro_text').attr('placeholder', hero?.microGoal ? `Сейчас: ${hero.microGoal}` : 'сходить в магазин');
 }
 
@@ -85,7 +85,7 @@ function refreshInterventionButtons() {
 function requireHeroes() {
     const state = getState();
     if (!state) throw new Error('Сначала откройте чат');
-    if (state.heroes.length !== 2) throw new Error('Нет героев: подготовьте их в «Старте игры»');
+    if (!state.heroes.length) throw new Error('Нет героев: подготовьте их в «Старте игры»');
     return state;
 }
 
@@ -103,11 +103,11 @@ export function bindIntervention(bindButton, onChange) {
 
     bindButton('#rpga_micro_set', async () => {
         const state = requireHeroes();
-        const heroIndex = HERO_IDS.indexOf($$('#rpga_micro_hero').val());
-        const previous = applyMicroGoal(state, heroIndex, $$('#rpga_micro_text').val());
-        const hero = state.heroes[heroIndex];
+        const index = heroIndex($$('#rpga_micro_hero').val());
+        const previous = applyMicroGoal(state, index, $$('#rpga_micro_text').val());
+        const hero = state.heroes[index];
         await saveState();
-        console.log(`${LOG_PREFIX} микроцель ${HERO_IDS[heroIndex]} (${hero.name}): «${previous || '—'}» → «${hero.microGoal}»`);
+        console.log(`${LOG_PREFIX} микроцель ${heroId(index)} (${hero.name}): «${previous || '—'}» → «${hero.microGoal}»`);
         $$('#rpga_micro_text').val('');
         onChange();
         toastr.success(`${hero.name}: «${hero.microGoal}». Видят только ${hero.name} и мастер, со следующего хода.`, 'Микроцель');
